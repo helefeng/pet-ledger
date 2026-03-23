@@ -27,3 +27,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# 项目内部材料（不需要上传）
+材料/
+待做.txt
+启动.txt
+
+# SQL 文件（保留 sql/ 目录下的，根目录的重复文件排除）
+01_init_tables.sql

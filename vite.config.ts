@@ -4,6 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  base: '/pet-ledger/',
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
@@ -11,6 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: true,
     open: true,
   },
   build: {

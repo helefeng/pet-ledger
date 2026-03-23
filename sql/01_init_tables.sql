@@ -83,6 +83,56 @@ CREATE POLICY "Allow all on trades" ON trades
   FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================
+-- 星球日记表
+-- ============================================
+CREATE TABLE IF NOT EXISTS planet_diaries (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "accountId" TEXT NOT NULL,
+  planet TEXT NOT NULL,
+  title TEXT NOT NULL,
+  "diaryType" TEXT NOT NULL DEFAULT 'daily',
+  content TEXT DEFAULT '',
+  images JSONB DEFAULT '[]',
+  "eventTime" TEXT,
+  "createdAt" TEXT NOT NULL,
+  "updatedAt" TEXT NOT NULL
+);
+
+ALTER TABLE planet_diaries ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all on planet_diaries" ON planet_diaries
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- pet_trades 表（如果还没有创建）
+CREATE TABLE IF NOT EXISTS pet_trades (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "accountId" TEXT NOT NULL,
+  "itemName" TEXT NOT NULL,
+  type TEXT NOT NULL,
+  status TEXT DEFAULT 'confirmed',
+  price DECIMAL NOT NULL,
+  quantity INTEGER DEFAULT 1,
+  nature TEXT,
+  level INTEGER,
+  individual INTEGER,
+  ability TEXT,
+  "tradeDate" TEXT NOT NULL,
+  "isShiny" TEXT DEFAULT '否',
+  commission DECIMAL DEFAULT 0,
+  "actualProfit" DECIMAL DEFAULT 0,
+  "createdAt" TEXT NOT NULL,
+  "updatedAt" TEXT NOT NULL,
+  synced BOOLEAN DEFAULT true
+);
+
+ALTER TABLE pet_trades ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all on pet_trades" ON pet_trades
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================
 -- 说明：
 -- - UUID：通用唯一标识符，自动生成
 -- - DECIMAL：用于存储价格，支持小数
