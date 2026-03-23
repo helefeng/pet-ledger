@@ -1,0 +1,7 @@
+1 对账号做持久化处理，记录最近一次的账号记录，这样刷新的时候就不会默认为第一个创建的账户
+2 在添加交易的页面可以加上物品名称的图像
+3 对于交易记录新增一个属性，物品类型（宠物/道具）
+4 昨天的爬取的/Users/fukuanma/pet-ledger/src/constants/petDatabase.ts 文件有些错误
+具体是 http://seerh5.61.com/resource/assets/fightResource/pet/\${petId}.png与https://seer.61.com/main/spirit/${petId}.html
+的 petId 不是完全一一对应的，现在要重新修改
+5 星球日记，加入一个类型，表示异色事件与日常事件，此外日记内容不是必须的，选填写
