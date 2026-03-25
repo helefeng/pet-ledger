@@ -109,12 +109,21 @@ export const useAuthStore = defineStore('auth', () => {
         // 从云端拉取账号
         const remoteAccounts = await SyncService.fetchAccountsByUserId(currentUser.value.id)
         for (const acc of remoteAccounts) {
-          await db.gameAccounts.put(acc)
+          // 保留本地已有的扩展字段（如 tradeBalance）
+          const local = await db.gameAccounts.get(acc.id)
+          await db.gameAccounts.put({ ...acc, ...(local ? { tradeBalance: local.tradeBalance, tradeBalanceUpdatedAt: local.tradeBalanceUpdatedAt } : {}) })
         }
       }
 
       const allAccounts = await db.gameAccounts.toArray()
-      const accounts = allAccounts.filter(a => a.userId === currentUser.value!.id)
+      // 去重：同一 userId 下相同 id 只保留一条
+      const seen = new Set<string>()
+      const accounts = allAccounts.filter(a => {
+        if (a.userId !== currentUser.value!.id) return false
+        if (seen.has(a.id)) return false
+        seen.add(a.id)
+        return true
+      })
       userAccounts.value = accounts
 
       if (accounts.length > 0) {

@@ -12,6 +12,8 @@ export interface GameAccount {
   userId: string
   accountName: string
   gameEmail: string
+  tradeBalance?: number // 交易余额（元宝）
+  tradeBalanceUpdatedAt?: string // 余额更新时间
   createdAt: string
 }
 

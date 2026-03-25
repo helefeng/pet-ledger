@@ -19,6 +19,10 @@
     <!-- 今日概览 -->
     <div class="stats-row">
       <div class="stat-card">
+        <span class="stat-value trade-balance">{{ authStore.currentAccount?.tradeBalance !== undefined ? (authStore.currentAccount.tradeBalance / 10000).toFixed(4) + 'w' : '--' }}</span>
+        <span class="stat-label">余额</span>
+      </div>
+      <div class="stat-card">
         <span class="stat-value">{{ todayBuyCount }}</span>
         <span class="stat-label">今日买入</span>
       </div>
@@ -104,7 +108,7 @@
               :page-size="pendingPageSize"
               layout="prev, pager, next"
               :total="pendingAccountTrades.length"
-              small background
+              size="small" background
             />
           </div>
         </div>
@@ -191,7 +195,7 @@
             </el-table>
           </div>
           <div class="recent-pagination">
-            <el-pagination v-model:current-page="recentPage" :page-size="recentPageSize" layout="prev, pager, next" :total="sortedAccountTrades.length" small background />
+            <el-pagination v-model:current-page="recentPage" :page-size="recentPageSize" layout="prev, pager, next" :total="sortedAccountTrades.length" size="small" background />
           </div>
         </div>
       </div>
@@ -206,6 +210,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { useTaskStore } from '@/stores/task'
 import { db } from '@/services/db'
+import { SyncService } from '@/services/sync'
 import { formatNumber } from '@/constants/pet'
 import type { PetTrade } from '@/types'
 
@@ -242,10 +247,11 @@ const saveToken = (token: string) => {
   const accountId = authStore.currentAccount?.id
   if (!accountId) return
   try {
+    const cleanToken = token.replace(/^"|"$/g, '').trim()
     const saved = JSON.parse(localStorage.getItem(TOKEN_KEY) || '{}')
-    saved[accountId] = token
+    saved[accountId] = cleanToken
     localStorage.setItem(TOKEN_KEY, JSON.stringify(saved))
-    gameToken.value = token
+    gameToken.value = cleanToken
   } catch {}
 }
 
@@ -336,137 +342,41 @@ const readTokenFromGame = () => {
 
 const importFromGame = async () => {
   if (importing.value) return
-  const token = gameToken.value
+  const token = gameToken.value?.replace(/^"|"$/g, '').trim()
   if (!token) { addLog('请先获取 Token', 'warn'); return }
   const userId = authStore.currentUser?.id
-  const accountId = authStore.currentAccount?.id
-  if (!userId || !accountId) { addLog('未选择账号', 'err'); return }
+  const account = authStore.currentAccount
+  if (!userId || !account) { addLog('未选择账号', 'err'); return }
 
   importing.value = true
   importLog.value = []
 
-  // === 第一步：拉取已完成交易记录 ===
-  const all: any[] = []
-  let page = 1, totalPages = 1
-
-  while (page <= totalPages) {
-    importProgress.value = `拉取交易记录 第 ${page}/${totalPages} 页...`
-    const body: any = { currentPage: page, limit: 50 }
-    if (importDateFrom.value) body.startTime = importDateFrom.value + ' 00:00:00'
-    if (importDateTo.value) body.endTime = importDateTo.value + ' 00:00:00'
-
-    try {
-      const res = await fetch(`${API_HOST}/seer/trade/tradeRecord`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Origin': FRONT_HOST, 'Token': token },
-        body: JSON.stringify(body),
-      })
-      const json = await res.json()
-      if (!json?.data?.list) break
-      const { list, totalPage } = json.data
-      totalPages = totalPage || 1
-      all.push(...list)
-      page++
-    } catch (e: any) {
-      addLog(`拉取交易记录失败：${e.message}`, 'err')
-      break
-    }
-    await new Promise(r => setTimeout(r, 200))
-  }
-
-  addLog(`获取 ${all.length} 条已完成记录`, 'ok')
-
-  // === 第二步：拉取上架中（待售）记录 ===
-  importProgress.value = '拉取上架中记录...'
-  let myTradeList: any[] = []
   try {
-    const res = await fetch(`${API_HOST}/seer/trade/myTrade`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json', 'Origin': FRONT_HOST, 'Referer': FRONT_HOST + '/', 'Token': token },
+    const result = await SyncService.importGameData({
+      token,
+      userId,
+      account,
+      dateFrom: importDateFrom.value,
+      dateTo: importDateTo.value,
+      onProgress: (msg) => { importProgress.value = msg },
     })
-    const json = await res.json()
-    if (json?.code === 200 && Array.isArray(json?.data)) {
-      myTradeList = json.data
-      addLog(`获取 ${myTradeList.length} 条上架中记录`, 'ok')
+
+    addLog(`获取 ${result.recordCount} 条已完成记录`, 'ok')
+    addLog(`新增 ${result.added} 条，跳过重复 ${result.skipped} 条`, 'ok')
+    addLog(`上架中待售：${result.pendingCount} 条`, 'info')
+    if (result.tradeBalance !== undefined) {
+      addLog(`余额：${(result.tradeBalance / 10000).toFixed(4)}w`, 'ok')
     }
+
+    const allAccounts = await db.gameAccounts.toArray()
+    const userAccounts = allAccounts.filter(a => a.userId === userId)
+    authStore.userAccounts.splice(0, authStore.userAccounts.length, ...userAccounts)
+    const fresh = userAccounts.find(a => a.id === account.id)
+    if (fresh && authStore.currentAccount) Object.assign(authStore.currentAccount, fresh)
   } catch (e: any) {
-    addLog(`拉取上架记录失败：${e.message}`, 'warn')
+    addLog(`导入失败：${e.message}`, 'err')
   }
 
-  // === 第三步：写入数据库 ===
-  const existing = new Set((await db.petTrades.toArray()).map(t => t.id))
-  let added = 0, skipped = 0
-
-  // 写入已完成交易
-  for (const r of all) {
-    const type = r.tradeType === 1 ? 'buy' : 'sell'
-    const total = Number(r.amount || 0)
-    const tradeDate = r.create_time?.split('T')[0] || today
-    const commission = type === 'sell' ? total * 0.05 : 0
-    let desc = ''
-    try {
-      const d = JSON.parse(r.itemDesc || '{}')
-      const parts: string[] = []
-      if (d.level) parts.push(`Lv${d.level}`)
-      if (d.nature) parts.push(d.nature)
-      if (d.iv !== undefined) parts.push(`个体${d.iv}`)
-      if (d.isShiny) parts.push('闪光')
-      desc = parts.join(' ')
-    } catch {}
-
-    const trade: PetTrade = {
-      id: `import_${r.orderId || r.recordId}`,
-      userId, accountId,
-      itemName: r.itemName || '未知',
-      price: total, quantity: 1, type,
-      status: 'confirmed',
-      tradeDate, commission,
-      actualProfit: type === 'sell' ? total - commission : 0,
-      notes: desc ? `${desc} | 订单:${r.orderId}` : `订单:${r.orderId}`,
-      synced: false,
-      createdAt: r.create_time ? new Date(r.create_time).toISOString() : new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-    if (existing.has(trade.id)) { skipped++; continue }
-    await db.petTrades.add(trade)
-    added++
-  }
-
-  // 写入上架中记录（status: pending）
-  for (const r of myTradeList) {
-    const total = Number(r.unitPrice || 0)
-    const tradeDate = r.listTime?.split('T')[0] || today
-    let desc = ''
-    try {
-      const d = JSON.parse(r.itemDesc || '{}')
-      const parts: string[] = []
-      if (d.level) parts.push(`Lv${d.level}`)
-      if (d.nature) parts.push(d.nature)
-      if (d.iv !== undefined) parts.push(`个体${d.iv}`)
-      if (d.isShiny) parts.push('闪光')
-      desc = parts.join(' ')
-    } catch {}
-
-    const trade: PetTrade = {
-      id: `listing_${r.listingId}`,
-      userId, accountId,
-      itemName: r.itemName || '未知',
-      price: total, quantity: r.quantity || 1, type: 'sell',
-      status: 'pending',
-      tradeDate, commission: total * 0.05,
-      actualProfit: 0,
-      notes: desc ? `${desc} | 上架中` : '上架中',
-      synced: false,
-      createdAt: r.listTime ? new Date(r.listTime).toISOString() : new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-    // 上架记录每次都更新（可能下架了）
-    await db.petTrades.put(trade)
-    if (existing.has(trade.id)) { skipped++ } else { added++ }
-  }
-
-  addLog(`新增 ${added} 条，跳过重复 ${skipped} 条`, 'ok')
-  addLog(`上架中待售：${myTradeList.length} 条`, 'info')
   importing.value = false
   importProgress.value = ''
   await loadAllAccountTrades()
@@ -667,6 +577,7 @@ onMounted(async () => {
 .action-label { font-size: 13px; font-weight: 600; color: var(--n-text-color-1); }
 .action-desc { font-size: 11px; color: var(--n-text-color-2); }
 .empty-tip { font-size: 13px; color: var(--n-text-color-2); text-align: center; padding: 12px; }
+.trade-balance { color: #00b894; }
 .collapse-arrow { font-size: 11px; color: var(--n-text-color-2); margin-left: 4px; }
 .trade-tabs { display: flex; gap: 2px; background: var(--n-border-color); border-radius: 6px; padding: 2px; }
 .tab-btn { padding: 4px 12px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; background: transparent; color: var(--n-text-color-2); font-weight: 500; }

@@ -49,6 +49,7 @@
           >
             <div class="ac-name">{{ account.accountName }}</div>
             <div class="ac-email">{{ account.gameEmail }}</div>
+            <div v-if="account.tradeBalance !== undefined" class="ac-balance">余额：{{ formatNumber(account.tradeBalance) }}</div>
             <div class="ac-stats">
               <span>买: ¥{{ formatNumber(getAccountStats(account.id).buy) }}</span>
               <span>卖: ¥{{ formatNumber(getAccountStats(account.id).sell) }}</span>
@@ -97,7 +98,7 @@
               :page-size="pendingPageSize"
               layout="prev, pager, next"
               :total="pendingTrades.length"
-              small
+              size="small"
               background
             />
           </div>
@@ -151,7 +152,7 @@
               :page-size="recentTradePageSize"
               layout="prev, pager, next"
               :total="allRecentTrades.length"
-              small
+              size="small"
               background
             />
           </div>
@@ -208,7 +209,7 @@
               :page-size="diaryPageSize"
               layout="prev, pager, next"
               :total="recentDiaries.length"
-              small
+              size="small"
               background
             />
           </div>
@@ -718,6 +719,7 @@ onUnmounted(() => {
 
 .ac-name { font-size: 13px; font-weight: 600; color: var(--n-text-color-1); }
 .ac-email { font-size: 11px; color: var(--n-text-color-2); margin-top: 2px; }
+.ac-balance { font-size: 11px; color: #00b894; font-weight: 600; margin-top: 2px; }
 
 .ac-stats {
   display: flex;

@@ -128,6 +128,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { db } from '@/services/db'
+import { SyncService } from '@/services/sync'
 import type { PetTrade } from '@/types'
 
 const router = useRouter()
@@ -141,7 +142,8 @@ const fileInput = ref<HTMLInputElement | null>(null)
 
 // 游戏数据导入
 const today = new Date().toISOString().split('T')[0]
-const importDateFrom = ref(today)
+const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+const importDateFrom = ref(yesterday)
 const importDateTo = ref(today)
 const accountTokenMap = ref<Record<string, string>>({})
 const importing = ref(false)
@@ -329,38 +331,46 @@ const importFromGame = async () => {
   let totalSkipped = 0
 
   for (const account of accounts) {
-    const token = accountTokenMap.value[account.id]?.trim()
+    const token = accountTokenMap.value[account.id]?.replace(/^"|"$/g, '').trim()
     if (!token) { addLog(`跳过 ${account.accountName}：未填写 Token`, 'warn'); continue }
 
     addLog(`开始拉取 ${account.accountName}（${account.gameEmail}）...`)
     try {
-      const raw = await fetchTrades(token, importDateFrom.value, importDateTo.value)
-      addLog(`获取 ${raw.length} 条原始记录`, 'ok')
+      const result = await SyncService.importGameData({
+        token,
+        userId,
+        account,
+        dateFrom: importDateFrom.value,
+        dateTo: importDateTo.value,
+        onProgress: (msg) => { importProgress.value = `${account.accountName}：${msg}` },
+      })
 
-      const existing = await db.petTrades.toArray()
-      const existingIds = new Set(existing.map(t => t.id))
-
-      let added = 0, skipped = 0
-      for (const r of raw) {
-        const trade = convertRecord(r, userId, account.id)
-        if (existingIds.has(trade.id)) { skipped++; continue }
-        await db.petTrades.add(trade)
-        added++
+      totalAdded += result.added
+      totalSkipped += result.skipped
+      addLog(`${account.accountName}：获取 ${result.recordCount} 条已完成记录`, 'ok')
+      addLog(`${account.accountName}：上架中 ${result.pendingCount} 条`, 'ok')
+      addLog(`${account.accountName}：新增 ${result.added} 条，跳过重复 ${result.skipped} 条`, 'ok')
+      if (result.tradeBalance !== undefined) {
+        addLog(`${account.accountName}：余额 ${(result.tradeBalance / 10000).toFixed(4)}w`, 'ok')
       }
-
-      totalAdded += added
-      totalSkipped += skipped
-      addLog(`${account.accountName}：新增 ${added} 条，跳过重复 ${skipped} 条`, 'ok')
     } catch (err: any) {
       addLog(`${account.accountName} 拉取失败：${err.message}`, 'err')
     }
+  }
+
+  // 刷新账号缓存（确保首页余额更新）
+  const allAccounts = await db.gameAccounts.toArray()
+  const userAccounts = allAccounts.filter(a => a.userId === userId)
+  authStore.userAccounts.splice(0, authStore.userAccounts.length, ...userAccounts)
+  if (authStore.currentAccount) {
+    const fresh = userAccounts.find(a => a.id === authStore.currentAccount!.id)
+    if (fresh) Object.assign(authStore.currentAccount, fresh)
   }
 
   addLog(`全部完成！共新增 ${totalAdded} 条，跳过 ${totalSkipped} 条`, 'ok')
   importing.value = false
   importProgress.value = ''
 
-  // 刷新首页数据
   await ledgerStore.loadTrades()
 }
 
