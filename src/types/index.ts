@@ -65,6 +65,31 @@ export interface PlanetDiary {
   updatedAt: string
 }
 
+// 日常任务
+export type TaskCategory = 'permanent' | 'limited' // 常驻 | 限时
+
+export interface TaskTemplate {
+  id: string
+  userId: string // 绑定用户
+  title: string // 任务名称
+  category: TaskCategory
+  expireAt?: string // 限时任务截止时间（可选）
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TaskRecord {
+  id: string
+  userId: string
+  accountId: string
+  taskId: string // 关联 TaskTemplate
+  completed: boolean
+  completedAt?: string
+  date: string // 任务日期 yyyy-mm-dd
+  createdAt: string
+  updatedAt: string
+}
+
 // 统计数据
 export interface Statistics {
   totalBuy: number

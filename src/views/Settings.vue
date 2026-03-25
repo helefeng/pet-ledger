@@ -33,6 +33,8 @@
       <button @click="showNewAccountDialog = true" class="btn-add-account">
         ➕ 新建账号
       </button>
+      <button @click="syncToCloud" class="btn-action">☁️ 同步本地到云端</button>
+      <button @click="deleteAllAccounts" class="btn-delete-all">🗑️ 删除所有账号</button>
     </div>
 
     <div class="settings-section">
@@ -40,6 +42,51 @@
       <button @click="exportJSON" class="btn-action">📥 导出 JSON</button>
       <button @click="exportCSV" class="btn-action">📊 导出 CSV</button>
       <button @click="importData" class="btn-action">📤 导入数据</button>
+    </div>
+
+    <div class="settings-section">
+      <h3>🎮 游戏数据导入</h3>
+      <p class="section-desc">直接从交易行拉取历史记录并导入，需要填写各账号的 Token（从浏览器抓包获取）。</p>
+
+      <!-- 日期选择 -->
+      <div class="import-date-row">
+        <div class="import-date-item">
+          <label>开始日期</label>
+          <input v-model="importDateFrom" type="date" class="modal-input" />
+        </div>
+        <div class="import-date-item">
+          <label>截止日期</label>
+          <input v-model="importDateTo" type="date" class="modal-input" />
+        </div>
+      </div>
+
+      <!-- 账号 Token 配置 -->
+      <div class="import-accounts">
+        <div v-for="account in authStore.userAccounts" :key="account.id" class="import-account-row">
+          <span class="import-account-name">{{ account.accountName }}（{{ account.gameEmail }}）</span>
+          <div class="token-row">
+            <input
+              v-model="accountTokenMap[account.id]"
+              type="text"
+              :placeholder="`${account.accountName} 的 Token`"
+              class="modal-input token-input"
+              @change="saveTokens"
+            />
+            <button class="btn-read-token" @click="readTokenFromGame(account.id)" title="从游戏网站读取 Token">读取</button>
+          </div>
+          <span v-if="accountTokenMap[account.id]" class="token-saved">✓ 已保存</span>
+        </div>
+      </div>
+
+      <!-- 操作按钮 -->
+      <button @click="importFromGame" :disabled="importing" class="btn-action btn-import">
+        {{ importing ? `导入中... ${importProgress}` : '🚀 一键拉取并导入' }}
+      </button>
+
+      <!-- 日志输出 -->
+      <div v-if="importLog.length" class="import-log">
+        <div v-for="(line, i) in importLog" :key="i" :class="['log-line', line.type]">{{ line.msg }}</div>
+      </div>
     </div>
 
     <div class="settings-section danger">
@@ -81,6 +128,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { db } from '@/services/db'
+import type { PetTrade } from '@/types'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -89,7 +137,232 @@ const ledgerStore = useLedgerStore()
 const showNewAccountDialog = ref(false)
 const newAccountName = ref('')
 const newAccountEmail = ref('')
-const fileInput = ref<HTMLInputElement>()
+const fileInput = ref<HTMLInputElement | null>(null)
+
+// 游戏数据导入
+const today = new Date().toISOString().split('T')[0]
+const importDateFrom = ref(today)
+const importDateTo = ref(today)
+const accountTokenMap = ref<Record<string, string>>({})
+const importing = ref(false)
+const importProgress = ref('')
+const importLog = ref<{ msg: string; type: string }[]>([])
+
+// 从 localStorage 恢复已保存的 Token
+const TOKEN_STORAGE_KEY = 'game-tokens'
+const loadSavedTokens = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TOKEN_STORAGE_KEY) || '{}')
+    accountTokenMap.value = saved
+  } catch {}
+}
+loadSavedTokens()
+
+const saveTokens = () => {
+  localStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(accountTokenMap.value))
+}
+
+const GAME_URL = 'http://61.160.213.26:12347'
+let gameWin: Window | null = null
+let pendingAccountId: string | null = null
+
+// 监听游戏网站发回的 Token
+window.addEventListener('message', (event) => {
+  if (event.origin !== GAME_URL.replace(/\/$/, '')) return
+  if (event.data?.type === 'game_token' && event.data?.token && pendingAccountId) {
+    accountTokenMap.value[pendingAccountId] = event.data.token
+    saveTokens()
+    addLog(`✓ 自动获取 Token 成功！`, 'ok')
+    pendingAccountId = null
+    gameWin?.close()
+  }
+})
+
+const readTokenFromGame = (accountId: string) => {
+  const account = authStore.userAccounts.find(a => a.id === accountId)
+  pendingAccountId = accountId
+  importLog.value = []
+
+  // 注入脚本的 URL：打开游戏网站并附带回调指令
+  const injectScript = encodeURIComponent(`
+    setTimeout(() => {
+      const token = localStorage.getItem('token')
+      if (token) {
+        window.opener?.postMessage({ type: 'game_token', token }, '*')
+        document.title = '✓ Token 已发送，可关闭此窗口'
+      } else {
+        alert('未检测到登录状态，请先登录后刷新页面')
+      }
+    }, 1500)
+  `)
+
+  gameWin = window.open(
+    GAME_URL + '?_inject=1',
+    'game_login',
+    'width=1200,height=800'
+  )
+
+  if (!gameWin) {
+    addLog('弹出窗口被阻止，请允许后重试', 'warn')
+    return
+  }
+
+  addLog(`已打开游戏网站，请登录【${account?.accountName || ''}】账号`, 'info')
+  addLog('登录成功后 Token 将自动发回，无需手动操作', 'info')
+  addLog('如果等待超过 10 秒未自动填入，请手动复制 Token', 'warn')
+
+  // 轮询检查弹窗是否已登录（同域时可直接读，跨域时 postMessage 接收）
+  const check = setInterval(() => {
+    if (!gameWin || gameWin.closed) {
+      clearInterval(check)
+      pendingAccountId = null
+      return
+    }
+    try {
+      // 尝试直接读取（如果同域）
+      const token = gameWin.localStorage?.getItem('token')
+      if (token && pendingAccountId) {
+        accountTokenMap.value[pendingAccountId] = token
+        saveTokens()
+        addLog(`✓ 自动获取 Token 成功！`, 'ok')
+        pendingAccountId = null
+        clearInterval(check)
+        gameWin.close()
+      }
+    } catch {
+      // 跨域时无法直接读取，等待 postMessage
+    }
+  }, 1000)
+}
+
+const API_HOST = 'http://140.210.17.123:8211'
+const FRONT_HOST = 'http://61.160.213.26:12347'
+
+const addLog = (msg: string, type = 'info') => {
+  importLog.value.push({ msg: `[${new Date().toLocaleTimeString()}] ${msg}`, type })
+}
+
+const fetchTrades = async (token: string, dateFrom: string, dateTo: string) => {
+  const all: any[] = []
+  let page = 1
+  let totalPages = 1
+  const PAGE_SIZE = 50
+
+  while (page <= totalPages) {
+    importProgress.value = `第 ${page}/${totalPages} 页`
+    const body: any = { currentPage: page, limit: PAGE_SIZE }
+    if (dateFrom) body.startTime = dateFrom + ' 00:00:00'
+    if (dateTo) body.endTime = dateTo + ' 00:00:00'
+
+    const res = await fetch(`${API_HOST}/seer/trade/tradeRecord`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': FRONT_HOST,
+        'Token': token,
+      },
+      body: JSON.stringify(body),
+    })
+
+    const json = await res.json()
+    if (!json?.data?.list) break
+
+    const { list, totalPage } = json.data
+    totalPages = totalPage || 1
+    all.push(...list)
+    page++
+    await new Promise(r => setTimeout(r, 200))
+  }
+  return all
+}
+
+const convertRecord = (record: any, userId: string, accountId: string): Omit<PetTrade, never> => {
+  const type = record.tradeType === 1 ? 'buy' : 'sell'
+  const total = Number(record.amount || 0)
+  const tradeDate = record.create_time?.split('T')[0] || today
+  const commission = type === 'sell' ? total * 0.05 : 0
+  const actualProfit = type === 'sell' ? total - commission : 0
+
+  let desc = ''
+  try {
+    const d = JSON.parse(record.itemDesc || '{}')
+    const parts = []
+    if (d.level) parts.push(`Lv${d.level}`)
+    if (d.nature) parts.push(d.nature)
+    if (d.iv !== undefined) parts.push(`个体${d.iv}`)
+    if (d.isShiny) parts.push('闪光')
+    desc = parts.join(' ')
+  } catch {}
+
+  return {
+    id: `import_${record.orderId || record.recordId}`,
+    userId,
+    accountId,
+    itemName: record.itemName || '未知',
+    price: total,
+    quantity: 1,
+    type,
+    status: 'confirmed' as const,
+    tradeDate,
+    commission,
+    actualProfit,
+    notes: desc ? `${desc} | 订单:${record.orderId}` : `订单:${record.orderId}`,
+    synced: false,
+    createdAt: record.create_time ? new Date(record.create_time).toISOString() : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+const importFromGame = async () => {
+  if (importing.value) return
+  importing.value = true
+  importLog.value = []
+
+  const userId = authStore.currentUser?.id
+  if (!userId) { addLog('未登录', 'err'); importing.value = false; return }
+
+  const accounts = authStore.userAccounts
+  if (accounts.length === 0) { addLog('没有账号', 'err'); importing.value = false; return }
+
+  let totalAdded = 0
+  let totalSkipped = 0
+
+  for (const account of accounts) {
+    const token = accountTokenMap.value[account.id]?.trim()
+    if (!token) { addLog(`跳过 ${account.accountName}：未填写 Token`, 'warn'); continue }
+
+    addLog(`开始拉取 ${account.accountName}（${account.gameEmail}）...`)
+    try {
+      const raw = await fetchTrades(token, importDateFrom.value, importDateTo.value)
+      addLog(`获取 ${raw.length} 条原始记录`, 'ok')
+
+      const existing = await db.petTrades.toArray()
+      const existingIds = new Set(existing.map(t => t.id))
+
+      let added = 0, skipped = 0
+      for (const r of raw) {
+        const trade = convertRecord(r, userId, account.id)
+        if (existingIds.has(trade.id)) { skipped++; continue }
+        await db.petTrades.add(trade)
+        added++
+      }
+
+      totalAdded += added
+      totalSkipped += skipped
+      addLog(`${account.accountName}：新增 ${added} 条，跳过重复 ${skipped} 条`, 'ok')
+    } catch (err: any) {
+      addLog(`${account.accountName} 拉取失败：${err.message}`, 'err')
+    }
+  }
+
+  addLog(`全部完成！共新增 ${totalAdded} 条，跳过 ${totalSkipped} 条`, 'ok')
+  importing.value = false
+  importProgress.value = ''
+
+  // 刷新首页数据
+  await ledgerStore.loadTrades()
+}
 
 const deleteAccount = async (accountId: string) => {
   if (confirm('确定删除这个账号吗？此操作不可撤销。')) {
@@ -98,13 +371,41 @@ const deleteAccount = async (accountId: string) => {
   }
 }
 
-const createNewAccount = async () => {
-  if (!newAccountName.value.trim() || !newAccountEmail.value.trim()) return
+const deleteAllAccounts = async () => {
+  if (!confirm('确定删除当前用户的所有账号吗？此操作不可撤销！')) return
+  if (!confirm('再次确认：删除所有账号？')) return
+  const result = await authStore.deleteAllAccounts()
+  if (result?.success) {
+    alert('所有账号已删除')
+    await ledgerStore.loadTrades()
+  } else {
+    alert(result?.error || '删除失败')
+  }
+}
 
-  await authStore.createAccount(newAccountName.value, newAccountEmail.value)
-  newAccountName.value = ''
-  newAccountEmail.value = ''
-  showNewAccountDialog.value = false
+const syncToCloud = async () => {
+  const result = await authStore.syncLocalToCloud()
+  if (result?.success) {
+    alert('本地数据已同步到云端')
+  } else {
+    alert('同步失败，请检查网络')
+  }
+}
+
+const createNewAccount = async () => {
+  if (!newAccountName.value.trim() || !newAccountEmail.value.trim()) {
+    alert('请填写账号名称和游戏邮箱')
+    return
+  }
+
+  const result = await authStore.createAccount(newAccountName.value.trim(), newAccountEmail.value.trim())
+  if (result?.success) {
+    newAccountName.value = ''
+    newAccountEmail.value = ''
+    showNewAccountDialog.value = false
+  } else {
+    alert(result?.error || '创建失败')
+  }
 }
 
 const exportData = async () => {
@@ -371,6 +672,22 @@ const clearAllData = async () => {
   background: #ff7875;
 }
 
+.btn-delete-all {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #ff7700;
+  color: white;
+}
+
+.btn-delete-all:hover {
+  background: #ff9933;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -478,4 +795,92 @@ const clearAllData = async () => {
     font-size: 12px;
   }
 }
+
+.section-desc {
+  font-size: 12px;
+  color: var(--n-text-color-2);
+  margin: 0;
+}
+.import-date-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.import-date-item label {
+  font-size: 12px;
+  color: var(--n-text-color-2);
+  display: block;
+  margin-bottom: 4px;
+}
+.import-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.import-account-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.import-account-name {
+  font-size: 12px;
+  color: var(--n-text-color-2);
+  font-weight: 600;
+}
+.token-input {
+  font-size: 12px;
+  font-family: monospace;
+}
+.token-saved {
+  font-size: 11px;
+  color: #2ecc71;
+  font-weight: 600;
+}
+.token-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.token-row .modal-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+.btn-read-token {
+  padding: 8px 12px;
+  background: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-read-token:hover { background: #219a52; }
+.btn-import {
+  background: #667eea !important;
+  color: white !important;
+  border-color: #667eea !important;
+}
+.btn-import:hover {
+  background: #5568d3 !important;
+}
+.btn-import:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.import-log {
+  background: #0f0f1a;
+  border-radius: 6px;
+  padding: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12px;
+  font-family: monospace;
+  line-height: 1.8;
+}
+.log-line { color: #aaa; }
+.log-line.ok { color: #2ecc71; }
+.log-line.err { color: #e74c3c; }
+.log-line.warn { color: #f39c12; }
 </style>

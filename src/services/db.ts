@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { User, GameAccount, PetTrade, Category, PlanetDiary } from '@/types'
+import type { User, GameAccount, PetTrade, Category, PlanetDiary, TaskTemplate, TaskRecord } from '@/types'
 
 export class PetTradeDB extends Dexie {
   users!: Table<User>
@@ -7,6 +7,8 @@ export class PetTradeDB extends Dexie {
   petTrades!: Table<PetTrade>
   categories!: Table<Category>
   planetDiaries!: Table<PlanetDiary>
+  taskTemplates!: Table<TaskTemplate>
+  taskRecords!: Table<TaskRecord>
 
   constructor() {
     super('PetTradeDB_v2')
@@ -15,7 +17,31 @@ export class PetTradeDB extends Dexie {
       gameAccounts: 'id',
       petTrades: 'id',
       categories: 'id',
+    })
+    this.version(2).stores({
+      users: 'id',
+      gameAccounts: 'id',
+      petTrades: 'id',
+      categories: 'id',
       planetDiaries: 'id',
+    })
+    this.version(3).stores({
+      users: 'id',
+      gameAccounts: 'id',
+      petTrades: 'id',
+      categories: 'id',
+      planetDiaries: 'id',
+      taskTemplates: 'id',
+      taskRecords: 'id',
+    })
+    this.version(4).stores({
+      users: 'id',
+      gameAccounts: 'id',
+      petTrades: 'id, accountId, userId, tradeDate, [accountId+tradeDate]',
+      categories: 'id',
+      planetDiaries: 'id, userId',
+      taskTemplates: 'id',
+      taskRecords: 'id',
     })
   }
 }

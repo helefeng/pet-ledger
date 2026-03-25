@@ -22,8 +22,58 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/add',
-    name: 'AddTrade',
+    redirect: '/account/add',
+  },
+  {
+    path: '/stats',
+    redirect: '/account/stats',
+  },
+  {
+    path: '/diary',
+    redirect: '/account/diary',
+  },
+  {
+    path: '/task',
+    redirect: '/account/task',
+  },
+  {
+    path: '/calendar',
+    redirect: '/account/calendar',
+  },
+  {
+    path: '/account',
+    name: 'Account',
+    component: () => import('@/views/Account.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/account/add',
+    name: 'AccountAddTrade',
     component: () => import('@/views/AddTrade.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/account/stats',
+    name: 'AccountStatistics',
+    component: () => import('@/views/Statistics.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/account/diary',
+    name: 'AccountDiary',
+    component: () => import('@/views/Diary.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/account/task',
+    name: 'AccountTask',
+    component: () => import('@/views/Task.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/account/calendar',
+    name: 'AccountCalendar',
+    component: () => import('@/views/Calendar.vue'),
     meta: { requiresAuth: true },
   },
   {
@@ -33,21 +83,9 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/stats',
-    name: 'Statistics',
-    component: () => import('@/views/Statistics.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/diary',
-    name: 'Diary',
-    component: () => import('@/views/Diary.vue'),
     meta: { requiresAuth: true },
   },
 ]
@@ -58,17 +96,17 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach((to) => {
   const authStore = useAuthStore()
   const requiresAuth = to.meta.requiresAuth
 
   if (requiresAuth && !authStore.isLoggedIn) {
-    next('/login')
-  } else if (to.path === '/login' && authStore.isLoggedIn) {
-    next('/')
-  } else {
-    next()
+    return '/login'
   }
+  if (to.path === '/login' && authStore.isLoggedIn) {
+    return '/'
+  }
+  return true
 })
 
 export default router

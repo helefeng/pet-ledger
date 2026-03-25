@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { PetTrade, PlanetDiary } from '@/types'
+import type { PetTrade, PlanetDiary, User, GameAccount } from '@/types'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || ''
@@ -13,17 +13,108 @@ if (SUPABASE_URL && SUPABASE_KEY) {
 export const isSupabaseConfigured = () => !!supabase
 
 export class SyncService {
-  // ==================== 交易记录同步 ====================
+  // ==================== 用户同步 ====================
+
+  static async uploadUser(user: User) {
+    if (!supabase) return { success: true, skipped: true }
+    try {
+      const { error } = await supabase.from('users').upsert([user], { onConflict: 'id' })
+      if (error) throw error
+      return { success: true }
+    } catch (error) {
+      console.error('上传用户失败:', error)
+      return { success: false, error }
+    }
+  }
+
+  static async fetchUserByUsername(username: string) {
+    if (!supabase) return null
+    try {
+      const { data, error } = await supabase.from('users').select('*').eq('username', username).single()
+      if (error) return null
+      return data as User
+    } catch {
+      return null
+    }
+  }
+
+  static async fetchUserById(id: string) {
+    if (!supabase) return null
+    try {
+      const { data, error } = await supabase.from('users').select('*').eq('id', id).single()
+      if (error) return null
+      return data as User
+    } catch {
+      return null
+    }
+  }
+
+  // ==================== 游戏账号同步 ====================
+
+  static async uploadAccount(account: GameAccount) {
+    if (!supabase) return { success: true, skipped: true }
+    try {
+      const { error } = await supabase.from('game_accounts').upsert([account], { onConflict: 'id' })
+      if (error) throw error
+      return { success: true }
+    } catch (error) {
+      console.error('上传游戏账号失败:', error)
+      return { success: false, error }
+    }
+  }
+
+  static async fetchAccountsByUserId(userId: string) {
+    if (!supabase) return []
+    try {
+      const { data, error } = await supabase.from('game_accounts').select('*').eq('userId', userId)
+      if (error) throw error
+      return (data || []) as GameAccount[]
+    } catch {
+      return []
+    }
+  }
+
+  static async fetchAccountsByEmail(gameEmail: string) {
+    if (!supabase) return []
+    try {
+      const { data, error } = await supabase.from('game_accounts').select('*').eq('gameEmail', gameEmail)
+      if (error) throw error
+      return (data || []) as GameAccount[]
+    } catch {
+      return []
+    }
+  }
+
+  static async deleteAccount(id: string) {
+    if (!supabase) return { success: true, skipped: true }
+    try {
+      const { error } = await supabase.from('game_accounts').delete().eq('id', id)
+      if (error) throw error
+      return { success: true }
+    } catch (error) {
+      console.error('删除游戏账号失败:', error)
+      return { success: false, error }
+    }
+  }
 
   static async uploadTrade(trade: PetTrade) {
-    if (!supabase) return { success: true, skipped: true }
+    if (!supabase) {
+      console.warn('Supabase 未配置，跳过上传')
+      return { success: true, skipped: true }
+    }
 
     try {
-      const { error } = await supabase
+      console.log('上传交易到 Supabase:', trade.id)
+      const { data, error } = await supabase
         .from('pet_trades')
         .upsert([trade], { onConflict: 'id' })
+        .select()
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase 上传错误:', error)
+        throw error
+      }
+      console.log('上传成功:', data)
       return { success: true }
     } catch (error) {
       console.error('上传交易失败:', error)
@@ -162,6 +253,29 @@ export class SyncService {
       return data || []
     } catch (error) {
       console.error('拉取日记失败:', error)
+      return []
+    }
+  }
+
+  // 按用户拉取全部日记（首页聚合展示用）
+  static async fetchDiariesByUserId(userId: string, since?: string) {
+    if (!supabase) return []
+
+    try {
+      let query = supabase
+        .from('planet_diaries')
+        .select('*')
+        .eq('userId', userId)
+
+      if (since) {
+        query = query.gt('updatedAt', since)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('按用户拉取日记失败:', error)
       return []
     }
   }

@@ -20,35 +20,46 @@
       暂无日记，开始记录你的冒险吧！
     </div>
 
-    <div v-else class="diaries-grid">
-      <div v-for="diary in diaryStore.recentDiaries" :key="diary.id" class="diary-card">
-        <div class="diary-header">
-          <h3>{{ diary.title }}</h3>
-          <div class="diary-header-right">
-            <span :class="['diary-type-badge', diary.diaryType === 'shiny' ? 'shiny' : 'daily']">
-              {{ diary.diaryType === 'shiny' ? '✨ 异色' : '📅 日常' }}
-            </span>
-            <span class="diary-planet">🌍 {{ diary.planet }}</span>
-          </div>
-        </div>
-        
-        <div v-if="diary.images.length > 0" class="diary-images">
-          <img v-for="(img, idx) in diary.images" :key="idx" :src="img" class="diary-image" />
-        </div>
+    <div v-else class="diary-table">
+      <div class="diary-table-header">
+        <span>标题</span>
+        <span>事件类型</span>
+        <span>所在星球</span>
+        <span>操作</span>
+      </div>
+      <div v-for="diary in diaryStore.recentDiaries" :key="diary.id" class="diary-table-row">
+        <span class="diary-title-cell">{{ diary.title }}</span>
+        <span>
+          <span :class="['diary-type-badge', diary.diaryType === 'shiny' ? 'shiny' : 'daily']">
+            {{ diary.diaryType === 'shiny' ? '✨ 异色' : '📅 日常' }}
+          </span>
+        </span>
+        <span class="diary-planet-cell">🌍 {{ diary.planet }}</span>
+        <span class="diary-actions">
+          <button @click="showDetail(diary)" class="btn-small btn-detail">详细</button>
+          <button @click="editDiary(diary)" class="btn-small btn-edit">编辑</button>
+          <button @click="deleteDiary(diary.id)" class="btn-small btn-delete">删除</button>
+        </span>
+      </div>
+    </div>
 
-        <div class="diary-content">
-          {{ diary.content.substring(0, 100) }}{{ diary.content.length > 100 ? '...' : '' }}
+    <!-- 详情对话框 -->
+    <div v-if="detailDiary" class="modal-overlay" @click="detailDiary = null">
+      <div class="modal-content" @click.stop>
+        <h3>{{ detailDiary.title }}</h3>
+        <div class="detail-meta">
+          <span :class="['diary-type-badge', detailDiary.diaryType === 'shiny' ? 'shiny' : 'daily']">
+            {{ detailDiary.diaryType === 'shiny' ? '✨ 异色' : '📅 日常' }}
+          </span>
+          <span>🌍 {{ detailDiary.planet }}</span>
+          <span v-if="detailDiary.eventTime">⏰ {{ formatDate(detailDiary.eventTime) }}</span>
         </div>
-
-        <div class="diary-footer">
-          <div class="diary-times">
-            <span v-if="diary.eventTime" class="diary-event-time">⏰ {{ formatDate(diary.eventTime) }}</span>
-            <span class="diary-date">📝 {{ formatDate(diary.createdAt) }}</span>
-          </div>
-          <div class="diary-actions">
-            <button @click="editDiary(diary)" class="btn-small btn-edit">编辑</button>
-            <button @click="deleteDiary(diary.id)" class="btn-small btn-delete">删除</button>
-          </div>
+        <div class="detail-content">{{ detailDiary.content || '（无内容）' }}</div>
+        <div v-if="detailDiary.images.length > 0" class="diary-images">
+          <img v-for="(img, idx) in detailDiary.images" :key="idx" :src="img" class="diary-image" />
+        </div>
+        <div class="modal-actions">
+          <button @click="detailDiary = null" class="btn-confirm">关闭</button>
         </div>
       </div>
     </div>
@@ -125,16 +136,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useDiaryStore } from '@/stores/diary'
 import type { PlanetDiary } from '@/types'
 
 const authStore = useAuthStore()
 const diaryStore = useDiaryStore()
+const route = useRoute()
 
 const showNewDiaryDialog = ref(false)
 const editingDiary = ref<PlanetDiary | null>(null)
+const detailDiary = ref<PlanetDiary | null>(null)
 const fileInput = ref<HTMLInputElement>()
 
 const form = ref({
@@ -224,6 +238,10 @@ const deleteDiary = async (id: string) => {
   }
 }
 
+const showDetail = (diary: PlanetDiary) => {
+  detailDiary.value = diary
+}
+
 const resetForm = () => {
   form.value = {
     title: '',
@@ -237,8 +255,22 @@ const resetForm = () => {
 }
 
 // 初始化
-diaryStore.loadDiaries()
-diaryStore.syncWithCloud()
+onMounted(async () => {
+  // 确保账号已加载
+  if (authStore.userAccounts.length === 0) {
+    await authStore.loadUserAccounts()
+  }
+  await diaryStore.loadDiaries()
+  await diaryStore.syncWithCloud()
+
+  const focusId = route.query.focus as string | undefined
+  if (focusId) {
+    const target = diaryStore.diaries.find(d => d.id === focusId)
+    if (target) {
+      detailDiary.value = target
+    }
+  }
+})
 
 const handleSync = async () => {
   await diaryStore.syncWithCloud()
@@ -321,48 +353,48 @@ const handleSync = async () => {
   font-size: 14px;
 }
 
-.diaries-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-}
-
-.diary-card {
+.diary-table {
   background: var(--n-color);
   border: 1px solid var(--n-border-color);
   border-radius: 8px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  transition: all 0.2s;
+  overflow: hidden;
 }
 
-.diary-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-.diary-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
+.diary-table-header,
+.diary-table-row {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr 1fr 1.2fr;
   gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
 }
 
-.diary-header h3 {
-  font-size: 14px;
-  margin: 0;
+.diary-table-header {
+  background: var(--n-color-hover);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--n-text-color-2);
+}
+
+.diary-table-row {
+  border-top: 1px solid var(--n-border-color);
+  font-size: 13px;
+}
+
+.diary-table-row:hover {
+  background: var(--n-color-hover);
+}
+
+.diary-title-cell {
   color: var(--n-text-color-1);
   font-weight: 600;
-  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.diary-header-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+.diary-planet-cell {
+  color: var(--n-text-color-2);
 }
 
 .diary-type-badge {
@@ -385,10 +417,30 @@ const handleSync = async () => {
   border: 1px solid rgba(102, 126, 234, 0.2);
 }
 
-.diary-planet {
+.btn-detail {
+  background: #667eea;
+  color: white;
+}
+
+.btn-detail:hover {
+  background: #5568d3;
+}
+
+.detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
   font-size: 12px;
   color: var(--n-text-color-2);
-  white-space: nowrap;
+}
+
+.detail-content {
+  font-size: 13px;
+  color: var(--n-text-color-1);
+  line-height: 1.6;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
 }
 
 .type-selector {
@@ -413,12 +465,6 @@ const handleSync = async () => {
   background: rgba(102, 126, 234, 0.1);
   color: #667eea;
   font-weight: 600;
-}
-
-.type-btn.active[data-type='shiny'] {
-  border-color: #d4a400;
-  background: rgba(255, 215, 0, 0.1);
-  color: #d4a400;
 }
 
 .optional {
@@ -623,6 +669,13 @@ const handleSync = async () => {
 
 .btn-remove:hover {
   background: #ff7875;
+}
+@media (max-width: 768px) {
+  .diary-table-header,
+  .diary-table-row {
+    grid-template-columns: 1.4fr 1fr 1fr 1.4fr;
+    font-size: 12px;
+  }
 }
 
 .modal-actions {

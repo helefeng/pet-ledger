@@ -11,19 +11,33 @@ export const useDiaryStore = defineStore('diary', () => {
   const loading = ref(false)
   const lastSyncTime = ref<string | null>(null)
 
-  // 加载日记
+  // 加载日记（先从云端同步，再从本地读取）
   const loadDiaries = async () => {
     if (!authStore.currentUser?.id || !authStore.currentAccount?.id) return
 
+    const userId = authStore.currentUser.id
+    const accountId = authStore.currentAccount.id
+
     try {
-      const allDiaries = await db.planetDiaries
-        .where('userId')
-        .equals(authStore.currentUser.id)
-        .toArray()
+      // 先从云端拉取最新数据
+      try {
+        const remoteDiaries = await SyncService.fetchDiaries(userId, accountId)
+        // 严格校验：只写入属于当前 userId + accountId 的数据
+        for (const diary of remoteDiaries) {
+          if (diary.userId === userId && diary.accountId === accountId) {
+            await db.planetDiaries.put(diary)
+          }
+        }
+      } catch (syncErr) {
+        console.warn('云端拉取日记失败，使用本地缓存:', syncErr)
+      }
+
+      // 从本地读取（无论云端是否成功）
+      const allDiaries = await db.planetDiaries.toArray()
 
       diaries.value = allDiaries
-        .filter(d => d.accountId === authStore.currentAccount?.id)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .filter(d => d.userId === userId && d.accountId === accountId)
+        .sort((a, b) => new Date(b.eventTime || b.updatedAt || b.createdAt).getTime() - new Date(a.eventTime || a.updatedAt || a.createdAt).getTime())
     } catch (error) {
       console.error('加载日记失败:', error)
     }
@@ -41,6 +55,7 @@ export const useDiaryStore = defineStore('diary', () => {
         id: `diary_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         userId: authStore.currentUser.id,
         accountId: authStore.currentAccount.id,
+        images: Array.from(diary.images || []), // 确保是普通数组
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
@@ -67,6 +82,7 @@ export const useDiaryStore = defineStore('diary', () => {
       const updatedDiary = {
         ...diary,
         ...updates,
+        images: Array.from(updates.images || diary.images || []), // 确保是普通数组
         updatedAt: new Date().toISOString(),
       }
 
@@ -114,6 +130,8 @@ export const useDiaryStore = defineStore('diary', () => {
       const remoteDiaries = await SyncService.fetchDiaries(userId, accountId, lastSyncTime.value || undefined)
 
       for (const remote of remoteDiaries) {
+        // 严格校验，只写入属于当前账号的数据
+        if (remote.userId !== userId || remote.accountId !== accountId) continue
         const local = diaries.value.find(d => d.id === remote.id)
         if (!local || new Date(remote.updatedAt) > new Date(local.updatedAt)) {
           await db.planetDiaries.put(remote)
@@ -146,7 +164,7 @@ export const useDiaryStore = defineStore('diary', () => {
   // 最近的日记
   const recentDiaries = computed(() => {
     return [...diaries.value].sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      new Date(b.eventTime || b.updatedAt || b.createdAt).getTime() - new Date(a.eventTime || a.updatedAt || a.createdAt).getTime()
     ).slice(0, 20)
   })
 

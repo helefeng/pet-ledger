@@ -66,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useStatsStore } from '@/stores/stats'
 import { formatNumber } from '@/constants/pet'
 
@@ -74,6 +74,10 @@ const statsStore = useStatsStore()
 
 const userTotalStats = computed(() => statsStore.userTotalStats)
 const allAccountsStats = computed(() => statsStore.allAccountsStats)
+
+onMounted(async () => {
+  await statsStore.loadStats()
+})
 </script>
 
 <style scoped>

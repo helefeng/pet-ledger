@@ -133,6 +133,39 @@ CREATE POLICY "Allow all on pet_trades" ON pet_trades
   FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================
+-- 日常任务表
+-- ============================================
+CREATE TABLE IF NOT EXISTS task_templates (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'permanent',
+  "expireAt" TEXT,
+  "createdAt" TEXT NOT NULL,
+  "updatedAt" TEXT NOT NULL
+);
+
+ALTER TABLE task_templates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on task_templates" ON task_templates
+  FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS task_records (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "accountId" TEXT NOT NULL,
+  "taskId" TEXT NOT NULL,
+  completed BOOLEAN DEFAULT false,
+  "completedAt" TEXT,
+  date TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL,
+  "updatedAt" TEXT NOT NULL
+);
+
+ALTER TABLE task_records ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on task_records" ON task_records
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================
 -- 说明：
 -- - UUID：通用唯一标识符，自动生成
 -- - DECIMAL：用于存储价格，支持小数

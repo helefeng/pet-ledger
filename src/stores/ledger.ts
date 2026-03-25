@@ -5,30 +5,93 @@ import { db, initializeDefaultCategories } from '@/services/db'
 import { SyncService } from '@/services/sync'
 import { useAuthStore } from './auth'
 
+const getToday = () => new Date().toISOString().split('T')[0]
+const LAST_LEDGER_DAY_KEY = 'pet-ledger:last-ledger-day'
+
 export const useLedgerStore = defineStore('ledger', () => {
   const trades = ref<PetTrade[]>([])
   const loading = ref(false)
   const lastSyncTime = ref<string | null>(null)
+  const currentDay = ref(getToday())
+
+  let midnightTimer: ReturnType<typeof setTimeout> | null = null
+
+  const ensureMidnightWatcher = () => {
+    if (midnightTimer) clearTimeout(midnightTimer)
+
+    const now = new Date()
+    const nextMidnight = new Date(now)
+    nextMidnight.setHours(24, 0, 0, 0)
+    const delay = nextMidnight.getTime() - now.getTime()
+
+    midnightTimer = setTimeout(async () => {
+      await handleDayChanged()
+      ensureMidnightWatcher()
+    }, delay)
+  }
+
+  const generateDailySummaryForDate = async (_date: string) => {
+    // 日结汇总现在在日历页直接展示，不再写入星球日记
+  }
+
+  const handleDayChanged = async () => {
+    const today = getToday()
+    if (today === currentDay.value) return
+
+    const previousDay = currentDay.value
+    currentDay.value = today
+
+    await generateDailySummaryForDate(previousDay)
+    localStorage.setItem(LAST_LEDGER_DAY_KEY, today)
+    await loadTrades()
+  }
 
   // 初始化
   const initialize = async () => {
     loading.value = true
     try {
+      const today = getToday()
+      const lastDay = localStorage.getItem(LAST_LEDGER_DAY_KEY)
+      currentDay.value = today
+
       await initializeDefaultCategories()
+
+      if (lastDay && lastDay !== today) {
+        await generateDailySummaryForDate(lastDay)
+      }
+
+      localStorage.setItem(LAST_LEDGER_DAY_KEY, today)
+
       await loadTrades()
+      ensureMidnightWatcher()
     } finally {
       loading.value = false
     }
   }
 
-  // 加载交易记录
+  // 加载交易记录（先从云端同步）
   const loadTrades = async () => {
     const authStore = useAuthStore()
     if (!authStore.currentAccount) return
 
     try {
+      currentDay.value = getToday()
+
+      // 先从云端拉取最新数据
+      if (authStore.currentUser?.id && authStore.currentAccount?.id) {
+        const remoteTrades = await SyncService.fetchTrades(
+          authStore.currentUser.id,
+          authStore.currentAccount.id
+        )
+
+        await db.petTrades.bulkPut(remoteTrades)
+      }
+
+      // 再从本地读取（仅当日数据，实现 0 点自动重置）
       const allTrades = await db.petTrades.toArray()
-      const accountTrades = allTrades.filter(t => t.accountId === authStore.currentAccount!.id)
+      const accountTrades = allTrades.filter(
+        t => t.accountId === authStore.currentAccount!.id && t.tradeDate === currentDay.value
+      )
       trades.value = accountTrades.sort((a, b) => new Date(b.tradeDate).getTime() - new Date(a.tradeDate).getTime())
     } catch (error) {
       console.error('加载交易记录失败:', error)
@@ -58,7 +121,9 @@ export const useLedgerStore = defineStore('ledger', () => {
 
     try {
       await db.petTrades.add(newTrade)
-      trades.value.unshift(newTrade)
+      if (newTrade.tradeDate === currentDay.value) {
+        trades.value.unshift(newTrade)
+      }
 
       // 异步上传到云端
       SyncService.uploadTrade(newTrade).then((result) => {
@@ -91,20 +156,31 @@ export const useLedgerStore = defineStore('ledger', () => {
   // 更新交易
   const updateTrade = async (id: string, updates: Partial<PetTrade>) => {
     try {
-      const trade = trades.value.find(t => t.id === id)
+      let trade = trades.value.find(t => t.id === id)
+
+      if (!trade) {
+        trade = await db.petTrades.get(id)
+      }
+
       if (!trade) return { success: false, error: '交易不存在' }
 
-      const updatedTrade = {
+      const updatedTrade: PetTrade = {
         ...trade,
         ...updates,
         updatedAt: new Date().toISOString(),
       }
 
-      await db.petTrades.update(id, updatedTrade)
+      await db.petTrades.put(updatedTrade)
+
       const index = trades.value.findIndex(t => t.id === id)
       if (index !== -1) {
-        trades.value[index] = updatedTrade
+        if (updatedTrade.tradeDate === currentDay.value) {
+          trades.value[index] = updatedTrade
+        } else {
+          trades.value.splice(index, 1)
+        }
       }
+
       await SyncService.updateTrade(updatedTrade)
       return { success: true }
     } catch (error) {
@@ -113,7 +189,7 @@ export const useLedgerStore = defineStore('ledger', () => {
     }
   }
 
-  // 统计数据
+  // 统计数据（当日）
   const statistics = computed<Statistics>(() => {
     const stats = trades.value.reduce(
       (acc, t) => {
@@ -121,7 +197,6 @@ export const useLedgerStore = defineStore('ledger', () => {
         if (t.type === 'buy') {
           acc.totalBuy += totalPrice
         } else if (t.status === 'confirmed') {
-          // 只统计已确认的卖出
           acc.totalSell += totalPrice * 0.95
         }
         acc.tradeCount += 1
@@ -137,19 +212,14 @@ export const useLedgerStore = defineStore('ledger', () => {
       }
     )
 
-    // 利润 = 卖出 - 买入
     stats.totalProfit = stats.totalSell - stats.totalBuy
     stats.balance = stats.totalProfit
 
     return stats
   })
 
-  // 获取最近交易
-  const recentTrades = computed(() => {
-    return trades.value.slice(0, 20)
-  })
+  const recentTrades = computed(() => trades.value.slice(0, 20))
 
-  // 云同步
   const syncWithCloud = async () => {
     const authStore = useAuthStore()
     if (!authStore.currentUser?.id || !authStore.currentAccount?.id) return { success: false }
@@ -159,19 +229,13 @@ export const useLedgerStore = defineStore('ledger', () => {
       const userId = authStore.currentUser.id
       const accountId = authStore.currentAccount.id
 
-      // 先上传本地未同步的记录
-      await SyncService.uploadUnsyncedTrades(trades.value)
+      const allAccountTrades = (await db.petTrades.toArray()).filter(t => t.accountId === accountId)
+      await SyncService.uploadUnsyncedTrades(allAccountTrades)
 
-      // 拉取云端数据（增量同步）
       const result = await SyncService.fullSync(userId, accountId, lastSyncTime.value || undefined)
 
       if (result.success && result.trades.length > 0) {
-        for (const remote of result.trades) {
-          const local = trades.value.find(t => t.id === remote.id)
-          if (!local || new Date(remote.updatedAt) > new Date(local.updatedAt)) {
-            await db.petTrades.put({ ...remote, synced: true })
-          }
-        }
+        await db.petTrades.bulkPut(result.trades.map(remote => ({ ...remote, synced: true })))
         await loadTrades()
       }
 
@@ -185,24 +249,21 @@ export const useLedgerStore = defineStore('ledger', () => {
     }
   }
 
-  // 清除所有交易记录
   const clearAllTrades = async () => {
     const authStore = useAuthStore()
     try {
       const accountId = authStore.currentAccount?.id
       if (!accountId) return { success: false }
 
-      // 只删除当前账号的记录
       const accountTrades = await db.petTrades
         .filter(t => t.accountId === accountId)
         .toArray()
-      
+
       for (const t of accountTrades) {
         await db.petTrades.delete(t.id)
       }
       trades.value = []
 
-      // 云端同步清除
       if (authStore.currentUser?.id) {
         await SyncService.clearAllTrades(authStore.currentUser.id, accountId)
       }
@@ -226,5 +287,6 @@ export const useLedgerStore = defineStore('ledger', () => {
     updateTrade,
     clearAllTrades,
     syncWithCloud,
+    generateDailySummaryForDate,
   }
 })

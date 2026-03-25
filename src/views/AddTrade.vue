@@ -204,6 +204,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
+import { db } from '@/services/db'
 import { NATURES, ABILITIES, formatNumber } from '@/constants/pet'
 import { PETS_DATABASE } from '@/constants/petDatabase'
 
@@ -232,15 +233,26 @@ const form = ref({
 })
 
 // 初始化编辑模式
-onMounted(() => {
+onMounted(async () => {
   if (route.params.id) {
     isEditing.value = true
     editId.value = route.params.id as string
-    const trade = ledgerStore.trades.find(t => t.id === editId.value)
+
+    // 先从 store 读，避免重复查询
+    let trade = ledgerStore.trades.find(t => t.id === editId.value)
+
+    // 若 store 中没有（刷新后常见），再从 IndexedDB 读取
+    if (!trade) {
+      trade = await db.petTrades.get(editId.value)
+      if (trade && trade.accountId) {
+        authStore.switchAccount(trade.accountId)
+      }
+    }
+
     if (trade) {
       form.value = {
         type: trade.type as 'buy' | 'sell',
-        status: trade.status as 'pending' | 'confirmed',
+        status: (trade.status || 'pending') as 'pending' | 'confirmed',
         petName: trade.itemName,
         price: trade.price,
         quantity: trade.quantity,
@@ -251,6 +263,8 @@ onMounted(() => {
         tradeDate: trade.tradeDate,
         isShiny: trade.isShiny,
       }
+    } else {
+      error.value = '未找到要编辑的交易记录'
     }
   }
 })
@@ -314,12 +328,7 @@ const handleSubmit = async () => {
 
     let result
     if (isEditing.value) {
-      // 编辑模式：只更新指定字段，保持原有状态
-      const originalTrade = ledgerStore.trades.find(t => t.id === editId.value)
-      if (originalTrade && originalTrade.type === 'sell') {
-        // 保持原有的状态
-        tradeData.status = originalTrade.status
-      }
+      // 编辑模式：按表单提交的状态进行更新
       result = await ledgerStore.updateTrade(editId.value, tradeData)
     } else {
       // 新增模式

@@ -74,8 +74,8 @@ const handleSubmit = async () => {
 
   try {
     const result = isLogin.value
-      ? await authStore.login(form.username, form.password)
-      : await authStore.register(form.username, form.password)
+      ? await authStore.login(form.value.username, form.value.password)
+      : await authStore.register(form.value.username, form.value.password)
 
     if (result.success) {
       router.push('/')

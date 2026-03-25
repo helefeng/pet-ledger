@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <title>交易记录注入工具</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1a1a2e;
+      color: #eee;
+    }
+
+    h2 {
+      color: #667eea;
+    }
+
+    button {
+      padding: 10px 24px;
+      background: #667eea;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      margin: 8px 4px;
+    }
+
+    button:hover {
+      background: #5568d3;
+    }
+
+    button.danger {
+      background: #e74c3c;
+    }
+
+    #log {
+      background: #0f0f23;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+      min-height: 200px;
+      max-height: 500px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.8;
+    }
+
+    .ok {
+      color: #2ecc71;
+    }
+
+    .err {
+      color: #e74c3c;
+    }
+
+    .info {
+      color: #3498db;
+    }
+
+    .warn {
+      color: #f39c12;
+    }
+
+    input[type=file] {
+      display: none;
+    }
+
+    label.file-btn {
+      padding: 10px 24px;
+      background: #27ae60;
+      color: #fff;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      margin: 8px 4px;
+      display: inline-block;
+    }
+
+    label.file-btn:hover {
+      background: #219a52;
+    }
+
+    #stats {
+      background: #16213e;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-top: 12px;
+      font-size: 13px;
+      line-height: 2;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>赛尔号交易记录注入工具</h2>
+  <p style="color:#aaa">说明：此工具直接在浏览器中运行，将 imported_trades.json 注入到 App 的 IndexedDB，不会上传任何数据。</p>
+
+  <label class="file-btn" for="fileInput">📂 选择 imported_trades.json</label>
+  <input type="file" id="fileInput" accept=".json">
+  <button onclick="previewData()">👁 预览数据</button>
+  <button onclick="injectData()">🚀 注入到 App 数据库</button>
+  <button class="danger" onclick="clearImported()">🗑 清除已导入记录</button>
+
+  <div id="stats">尚未加载文件</div>
+  <div id="log">等待操作...</div>
+
+  <script>
+    const DB_NAME = 'PetTradeDB_v2'
+    const STORE_NAME = 'petTrades'
+    let importData = null
+
+    const log = (msg, type = '') => {
+      const div = document.getElementById('log')
+      const line = document.createElement('div')
+      line.className = type
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`
+      div.appendChild(line)
+      div.scrollTop = div.scrollHeight
+    }
+
+    const openDB = () => new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME)
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0]
+      if (!file) return
+      const text = await file.text()
+      try {
+        importData = JSON.parse(text)
+        log(`✓ 文件加载成功：${importData.totalCount} 条记录`, 'ok')
+        updateStats()
+      } catch (err) {
+        log(`✗ 文件解析失败：${err.message}`, 'err')
+      }
+    })
+
+    const updateStats = () => {
+      if (!importData) return
+      const trades = importData.trades || []
+      const buys = trades.filter(t => t.type === 'buy').length
+      const sells = trades.filter(t => t.type === 'sell').length
+      const totalAmount = trades.reduce((s, t) => s + (t.price * t.quantity), 0)
+      document.getElementById('stats').innerHTML = `
+        <b>文件信息</b><br>
+        导出时间：${importData.exportTime}<br>
+        总记录数：${trades.length} 条（买入 ${buys} 条 / 卖出 ${sells} 条）<br>
+        总金额：¥${totalAmount.toLocaleString()}<br>
+        账号：${importData.accounts?.map(a => a.accountName + '(' + a.gameEmail + ')').join(', ')}
+      `
+    }
+
+    const previewData = () => {
+      if (!importData) { log('请先选择 imported_trades.json 文件', 'warn'); return }
+      const trades = importData.trades || []
+      log(`--- 前5条记录预览 ---`, 'info')
+      trades.slice(0, 5).forEach((t, i) => {
+        log(`${i + 1}. [${t.type === 'buy' ? '买入' : '卖出'}] ${t.itemName} ¥${t.price} ${t.tradeDate} ${t.notes}`)
+      })
+      log(`--- 共 ${trades.length} 条 ---`, 'info')
+    }
+
+    const injectData = async () => {
+      if (!importData) { log('请先选择 imported_trades.json 文件', 'warn'); return }
+      const trades = importData.trades || []
+      if (trades.length === 0) { log('没有可导入的记录', 'warn'); return }
+
+      log(`开始注入 ${trades.length} 条记录...`, 'info')
+
+      try {
+        const db = await openDB()
+        const tx = db.transaction(STORE_NAME, 'readwrite')
+        const store = tx.objectStore(STORE_NAME)
+
+        // 先获取已有记录的 id 集合，避免重复
+        const existingIds = await new Promise((resolve) => {
+          const req = store.getAllKeys()
+          req.onsuccess = () => resolve(new Set(req.result))
+          req.onerror = () => resolve(new Set())
+        })
+
+        let added = 0, skipped = 0, failed = 0
+
+        for (const trade of trades) {
+          // 去掉 _raw 字段，不写入 DB
+          const { _raw, ...record } = trade
+          try {
+            if (existingIds.has(record.id)) {
+              skipped++
+            } else {
+              store.add(record)
+              added++
+            }
+          } catch (e) {
+            failed++
+          }
+        }
+
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = resolve
+          tx.onerror = () => reject(tx.error)
+        })
+
+        log(`✓ 注入完成！新增 ${added} 条，跳过重复 ${skipped} 条，失败 ${failed} 条`, 'ok')
+        log('请刷新 App 页面查看数据', 'info')
+        db.close()
+      } catch (err) {
+        log(`✗ 注入失败：${err.message}`, 'err')
+      }
+    }
+
+    const clearImported = async () => {
+      if (!confirm('确定要删除所有以 import_ 开头的导入记录吗？')) return
+      try {
+        const db = await openDB()
+        const tx = db.transaction(STORE_NAME, 'readwrite')
+        const store = tx.objectStore(STORE_NAME)
+        const all = await new Promise(resolve => {
+          const req = store.getAll()
+          req.onsuccess = () => resolve(req.result)
+        })
+        const toDelete = all.filter(t => t.id.startsWith('import_'))
+        for (const t of toDelete) store.delete(t.id)
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = resolve
+          tx.onerror = () => reject(tx.error)
+        })
+        log(`✓ 已清除 ${toDelete.length} 条导入记录`, 'ok')
+        db.close()
+      } catch (err) {
+        log(`✗ 清除失败：${err.message}`, 'err')
+      }
+    }
+  </script>
+</body>
+
+</html>

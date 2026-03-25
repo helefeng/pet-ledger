@@ -20,6 +20,8 @@
           <n-menu
             :value="activeMenu"
             :options="menuOptions"
+            :expanded-keys="expandedKeys"
+            @update:expanded-keys="handleExpandedKeys"
             @update:value="handleMenuSelect"
           />
           <div class="sidebar-footer">
@@ -39,6 +41,20 @@
             <div class="header-content">
               <div class="header-left">
                 <h1 v-if="isMobile">🎮 交易平台</h1>
+              </div>
+              <div class="header-center" v-if="authStore.userAccounts.length > 1">
+                <select
+                  :value="authStore.currentAccount?.id"
+                  @change="handleAccountSwitch"
+                  class="header-account-select"
+                >
+                  <option v-for="acc in authStore.userAccounts" :key="acc.id" :value="acc.id">
+                    {{ acc.gameEmail }}
+                  </option>
+                </select>
+              </div>
+              <div v-else-if="authStore.currentAccount" class="header-account-name">
+                {{ authStore.currentAccount.gameEmail }}
               </div>
               <div class="header-right">
                 <n-button
@@ -77,6 +93,8 @@
             <n-menu
               :value="activeMenu"
               :options="menuOptions"
+              :expanded-keys="expandedKeys"
+              @update:expanded-keys="handleExpandedKeys"
               @update:value="handleMenuSelect"
             />
           </n-drawer>
@@ -103,6 +121,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
+import { useDiaryStore } from '@/stores/diary'
 import { NConfigProvider, NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NButton, NIcon, NDrawer } from 'naive-ui'
 import { Menu as MenuIcon, Moon as MoonIcon, Sun as SunIcon, Logout as LogoutIcon } from '@vicons/carbon'
 import type { MenuOption } from 'naive-ui'
@@ -110,19 +129,24 @@ import type { MenuOption } from 'naive-ui'
 const router = useRouter()
 const authStore = useAuthStore()
 const ledgerStore = useLedgerStore()
+const diaryStore = useDiaryStore()
 
 const theme = ref<'light' | 'dark'>('light')
 const sidebarCollapsed = ref(false)
 const showMobileMenu = ref(false)
 const isMobile = ref(false)
+const expandedKeys = ref<string[]>(['account-group'])
 
 const activeMenu = computed(() => {
   const path = router.currentRoute.value.path
   if (path === '/') return 'home'
   if (path === '/overview') return 'overview'
-  if (path === '/add') return 'add'
-  if (path === '/stats') return 'stats'
-  if (path === '/diary') return 'diary'
+  if (path === '/account') return 'account-home'
+  if (path === '/account/add') return 'account-add'
+  if (path === '/account/stats') return 'account-stats'
+  if (path === '/account/diary') return 'account-diary'
+  if (path === '/account/task') return 'account-task'
+  if (path === '/account/calendar') return 'account-calendar'
   if (path === '/settings') return 'settings'
   return 'home'
 })
@@ -134,24 +158,22 @@ const menuOptions: MenuOption[] = [
     icon: () => '📊',
   },
   {
-    label: '总收益',
+    label: '账号中心',
+    key: 'account-group',
+    icon: () => '👤',
+    children: [
+      { label: '账号总览', key: 'account-home' },
+      { label: '添加交易', key: 'account-add' },
+      { label: '统计分析', key: 'account-stats' },
+      { label: '星球日记', key: 'account-diary' },
+      { label: '日常任务', key: 'account-task' },
+      { label: '日历页', key: 'account-calendar' },
+    ],
+  },
+  {
+    label: '总收益统计',
     key: 'overview',
-    icon: () => '💰',
-  },
-  {
-    label: '添加交易',
-    key: 'add',
-    icon: () => '➕',
-  },
-  {
-    label: '统计分析',
-    key: 'stats',
     icon: () => '📈',
-  },
-  {
-    label: '星球日记',
-    key: 'diary',
-    icon: () => '📔',
   },
   {
     label: '设置',
@@ -165,12 +187,29 @@ const handleMenuSelect = (key: string) => {
   const routes: Record<string, string> = {
     home: '/',
     overview: '/overview',
-    add: '/add',
-    stats: '/stats',
-    diary: '/diary',
+    'account-home': '/account',
+    'account-add': '/account/add',
+    'account-stats': '/account/stats',
+    'account-diary': '/account/diary',
+    'account-task': '/account/task',
+    'account-calendar': '/account/calendar',
     settings: '/settings',
   }
-  router.push(routes[key])
+
+  const target = routes[key]
+  if (target) {
+    router.push(target)
+  }
+}
+
+const handleExpandedKeys = (keys: string[]) => {
+  expandedKeys.value = keys
+}
+
+const handleAccountSwitch = (e: Event) => {
+  const id = (e.target as HTMLSelectElement).value
+  authStore.switchAccount(id)
+  ledgerStore.loadTrades()
 }
 
 const toggleTheme = () => {
@@ -191,6 +230,9 @@ const checkMobile = () => {
 onMounted(async () => {
   await authStore.restoreSession()
   await ledgerStore.initialize()
+  if (authStore.currentUser?.id && authStore.currentAccount?.id) {
+    await diaryStore.loadDiaries()
+  }
   // 自动从云端拉取最新数据
   ledgerStore.syncWithCloud()
   checkMobile()
@@ -244,11 +286,38 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   width: 100%;
+  gap: 8px;
 }
 
 .header-left h1 {
   margin: 0;
   font-size: 18px;
+}
+
+.header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.header-account-select {
+  padding: 5px 10px;
+  border: 1px solid var(--n-border-color);
+  border-radius: 6px;
+  background: var(--n-color);
+  color: var(--n-text-color-1);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.header-account-name {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--n-text-color-2);
 }
 
 .header-right {

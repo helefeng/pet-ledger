@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
-import { computed } from 'vue'
-import type { PetTrade } from '@/types'
-import { useLedgerStore } from './ledger'
+import { ref } from 'vue'
+import { db } from '@/services/db'
 import { useAuthStore } from './auth'
 
 export interface AccountStats {
@@ -15,16 +14,43 @@ export interface AccountStats {
   balance: number
 }
 
+export interface StatsState {
+  allAccountsStats: AccountStats[]
+  userTotalStats: {
+    totalBuy: number
+    totalSell: number
+    totalCommission: number
+    totalProfit: number
+    tradeCount: number
+    balance: number
+  }
+}
+
 export const useStatsStore = defineStore('stats', () => {
-  const ledgerStore = useLedgerStore()
   const authStore = useAuthStore()
 
-  // 获取所有账号的统计数据
-  const allAccountsStats = computed(() => {
+  const allAccountsStats = ref<AccountStats[]>([])
+  const userTotalStats = ref<StatsState['userTotalStats']>({
+    totalBuy: 0,
+    totalSell: 0,
+    totalCommission: 0,
+    totalProfit: 0,
+    tradeCount: 0,
+    balance: 0,
+  })
+
+  // 从本地 DB 加载全量历史统计（不受当日过滤影响）
+  const loadStats = async () => {
+    if (!authStore.currentUser?.id) return
+
+    const userId = authStore.currentUser.id
+    const allTrades = await db.petTrades.toArray()
+    const userTrades = allTrades.filter(t => t.userId === userId)
+
     const stats: AccountStats[] = []
 
     authStore.userAccounts.forEach(account => {
-      const accountTrades = ledgerStore.trades.filter(t => t.accountId === account.id)
+      const accountTrades = userTrades.filter(t => t.accountId === account.id)
 
       const accountStat = accountTrades.reduce(
         (acc, t) => {
@@ -33,8 +59,8 @@ export const useStatsStore = defineStore('stats', () => {
             acc.totalBuy += totalPrice
           } else {
             acc.totalSell += totalPrice
-            acc.totalCommission += t.commission
-            acc.totalProfit += t.actualProfit
+            acc.totalCommission += t.commission || 0
+            acc.totalProfit += t.actualProfit || 0
           }
           acc.tradeCount += 1
           return acc
@@ -55,12 +81,9 @@ export const useStatsStore = defineStore('stats', () => {
       stats.push(accountStat)
     })
 
-    return stats
-  })
+    allAccountsStats.value = stats
 
-  // 获取用户总统计
-  const userTotalStats = computed(() => {
-    const stats = allAccountsStats.value.reduce(
+    userTotalStats.value = stats.reduce(
       (acc, s) => {
         acc.totalBuy += s.totalBuy
         acc.totalSell += s.totalSell
@@ -78,13 +101,15 @@ export const useStatsStore = defineStore('stats', () => {
         balance: 0,
       }
     )
-
-    stats.balance = stats.totalSell - stats.totalBuy - stats.totalCommission
-    return stats
-  })
+    userTotalStats.value.balance =
+      userTotalStats.value.totalSell -
+      userTotalStats.value.totalBuy -
+      userTotalStats.value.totalCommission
+  }
 
   return {
     allAccountsStats,
     userTotalStats,
+    loadStats,
   }
 })
