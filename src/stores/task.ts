@@ -10,7 +10,13 @@ export const useTaskStore = defineStore('task', () => {
   const records = ref<TaskRecord[]>([])
   const loading = ref(false)
 
-  const today = () => new Date().toISOString().split('T')[0]
+  const today = () => {
+    const d = new Date()
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
 
   // 加载任务模板（当前用户）
   const loadTemplates = async () => {

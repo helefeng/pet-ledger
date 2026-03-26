@@ -1,15 +1,16 @@
-import { createClient } from '@supabase/supabase-js'
+// Supabase 云同步暂时禁用
+// import { createClient } from '@supabase/supabase-js'
 import { db } from '@/services/db'
 import type { PetTrade, PlanetDiary, User, GameAccount } from '@/types'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || ''
+// const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
+// const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || ''
 
 let supabase: any = null
 
-if (SUPABASE_URL && SUPABASE_KEY) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-}
+// if (SUPABASE_URL && SUPABASE_KEY) {
+//   supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+// }
 
 const GAME_API_HOST = 'http://140.210.17.123:8211'
 const GAME_FRONT_HOST = 'http://61.160.213.26:12347'
@@ -344,7 +345,7 @@ export class SyncService {
       onProgress?.(`拉取交易记录 第 ${page}/${totalPages} 页...`)
       const body: any = { currentPage: page, limit: 50 }
       if (dateFrom) body.startTime = `${dateFrom} 00:00:00`
-      if (dateTo) body.endTime = `${dateTo} 00:00:00`
+      if (dateTo) body.endTime = `${dateTo} 23:59:59`
 
       const res = await fetch(`${GAME_API_HOST}/seer/trade/tradeRecord`, {
         method: 'POST',

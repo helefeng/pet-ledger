@@ -68,7 +68,6 @@
         <h3>待确认卖出 <span class="collapse-arrow">{{ showPending ? '▾' : '▸' }}</span></h3>
         <div class="section-header-right">
           <span class="pending-count">共 {{ pendingTrades.length }} 条</span>
-          <button @click.stop="router.push('/account/stats')" class="btn-link">全部 ></button>
         </div>
       </div>
       <div v-show="showPending">
@@ -82,7 +81,7 @@
               </template>
             </el-table-column>
             <el-table-column label="金额" width="110" align="right">
-              <template #default="{ row }">¥{{ formatNumber((row.price || 0) * (row.quantity || 0)) }}</template>
+              <template #default="{ row }">¥{{ formatAmountRaw((row.price || 0) * (row.quantity || 0)) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="交易日期" width="120" align="center" />
             <el-table-column label="操作" width="120" align="center">
@@ -123,7 +122,6 @@
             <button :class="['sort-btn', { active: tradeSortBy === 'time' }]" @click="tradeSortBy = 'time'">时间</button>
             <button :class="['sort-btn', { active: tradeSortBy === 'amount' }]" @click="tradeSortBy = 'amount'">金额</button>
           </div>
-          <button @click="router.push('/overview')" class="btn-link">全部 ></button>
         </div>
       </div>
       <div v-show="showRecentTrades">
@@ -137,7 +135,7 @@
               </template>
             </el-table-column>
             <el-table-column label="金额" width="110" align="right">
-              <template #default="{ row }">¥{{ formatNumber((row.price || 0) * (row.quantity || 0)) }}</template>
+              <template #default="{ row }">¥{{ formatAmountRaw((row.price || 0) * (row.quantity || 0)) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="交易日期" width="120" align="center" />
             <el-table-column label="操作" width="90" align="center">
@@ -229,6 +227,9 @@ import { SyncService } from '@/services/sync'
 import { formatNumber } from '@/constants/pet'
 import type { PetTrade, PlanetDiary } from '@/types'
 
+const formatAmountRaw = (num: number) =>
+  Number(num).toLocaleString('zh-CN', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+
 const router = useRouter()
 const authStore = useAuthStore()
 const ledgerStore = useLedgerStore()
@@ -240,8 +241,6 @@ const todayStr = new Date().toLocaleDateString('zh-CN', {
   year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
 })
 
-// 今日所有账号交易（用于今日统计显示）
-const allTrades = ref<PetTrade[]>([])
 // 全量历史交易（用于总统计、账号卡片、待确认、最近交易）
 const allHistoryTrades = ref<PetTrade[]>([])
 const allDiaries = ref<PlanetDiary[]>([])
@@ -259,15 +258,11 @@ const showPending = ref(true)
 const showRecentTrades = ref(true)
 const showDiaries = ref(true)
 
-const today = ref(new Date().toISOString().split('T')[0])
 let midnightWatcher: ReturnType<typeof setTimeout> | null = null
 
 const loadAllData = async () => {
   if (!authStore.currentUser?.id) return
   const userId = authStore.currentUser.id
-  // 每次都重新计算当日日期，防止 ref 过期
-  today.value = new Date().toISOString().split('T')[0]
-  const todayStr = today.value
 
   // 先读本地，保证首页秒开
   const [localTrades, localDiaries] = await Promise.all([
@@ -275,7 +270,6 @@ const loadAllData = async () => {
     db.planetDiaries.toArray(),
   ])
 
-  allTrades.value = localTrades.filter(t => t.userId === userId && t.tradeDate === todayStr)
   allHistoryTrades.value = localTrades.filter(t => t.userId === userId)
   allDiaries.value = localDiaries.filter(d => d.userId === userId)
 
@@ -297,7 +291,6 @@ const loadAllData = async () => {
     const refreshed = await db.planetDiaries.toArray()
     allDiaries.value = refreshed.filter(d => d.userId === userId)
     const freshTrades = (await db.petTrades.toArray()).filter(t => t.userId === userId)
-    allTrades.value = freshTrades.filter(t => t.tradeDate === todayStr)
     allHistoryTrades.value = freshTrades
 
     if (currentDiaryPage.value > Math.max(1, Math.ceil(allDiaries.value.length / diaryPageSize))) {
@@ -315,7 +308,6 @@ const scheduleMidnightRefresh = () => {
   const delay = next.getTime() - now.getTime()
 
   midnightWatcher = setTimeout(async () => {
-    today.value = new Date().toISOString().split('T')[0]
     // 同时触发 ledgerStore 里的日数据重置
     await ledgerStore.initialize()
     await loadAllData()
@@ -600,13 +592,7 @@ onUnmounted(() => {
   padding: 0;
 }
 
- .btn-link:hover { color: #5568d3; }
-
-.section-header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.btn-link:hover { color: #5568d3; }
 
 .section-count {
   font-size: 12px;

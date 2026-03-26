@@ -15,18 +15,8 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/overview',
-    name: 'Overview',
-    component: () => import('@/views/Overview.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
     path: '/add',
     redirect: '/account/add',
-  },
-  {
-    path: '/stats',
-    redirect: '/account/stats',
   },
   {
     path: '/diary',
@@ -50,12 +40,6 @@ const routes: RouteRecordRaw[] = [
     path: '/account/add',
     name: 'AccountAddTrade',
     component: () => import('@/views/AddTrade.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/account/stats',
-    name: 'AccountStatistics',
-    component: () => import('@/views/Statistics.vue'),
     meta: { requiresAuth: true },
   },
   {

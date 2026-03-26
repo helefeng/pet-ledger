@@ -34,7 +34,6 @@
         ➕ 新建账号
       </button>
       <button @click="syncToCloud" class="btn-action">☁️ 同步本地到云端</button>
-      <button @click="deleteAllAccounts" class="btn-delete-all">🗑️ 删除所有账号</button>
     </div>
 
     <div class="settings-section">
@@ -83,6 +82,11 @@
         {{ importing ? `导入中... ${importProgress}` : '🚀 一键拉取并导入' }}
       </button>
 
+      <div v-if="importing" class="import-loading">
+        <span class="loading-dot"></span>
+        <span>正在导入中，请稍候… {{ importProgress }}</span>
+      </div>
+
       <!-- 日志输出 -->
       <div v-if="importLog.length" class="import-log">
         <div v-for="(line, i) in importLog" :key="i" :class="['log-line', line.type]">{{ line.msg }}</div>
@@ -92,6 +96,9 @@
     <div class="settings-section danger">
       <h3>危险操作</h3>
       <button @click="clearAllData" class="btn-clear-data">🗑️ 清除交易记录</button>
+      <button @click="clearAllTrades" class="btn-clear-data">🧹 清除所有交易记录</button>
+      <button @click="deleteAllAccounts" class="btn-delete-all">🗑️ 删除所有账号</button>
+      <button @click="clearAllLocalData" class="btn-delete-all">💥 清空本地所有数据</button>
       <button @click="logout" class="btn-logout">🚪 登出</button>
     </div>
 
@@ -127,8 +134,9 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
-import { db } from '@/services/db'
+import { db, initializeDefaultCategories } from '@/services/db'
 import { SyncService } from '@/services/sync'
+import { formatNumber } from '@/constants/pet'
 import type { PetTrade } from '@/types'
 
 const router = useRouter()
@@ -141,10 +149,23 @@ const newAccountEmail = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 
 // 游戏数据导入
-const today = new Date().toISOString().split('T')[0]
-const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
-const importDateFrom = ref(yesterday)
-const importDateTo = ref(today)
+const getToday = () => new Date().toISOString().split('T')[0]
+const getYesterday = () => new Date(Date.now() - 86400000).toISOString().split('T')[0]
+const importDateTo = ref(getToday())
+const importDateFrom = ref(getYesterday())
+
+// 每天自动更新导入日期
+const scheduleDateRefresh = () => {
+  const now = new Date()
+  const next = new Date(now)
+  next.setHours(24, 0, 0, 0)
+  setTimeout(() => {
+    importDateTo.value = getToday()
+    importDateFrom.value = getYesterday()
+    scheduleDateRefresh()
+  }, next.getTime() - now.getTime())
+}
+scheduleDateRefresh()
 const accountTokenMap = ref<Record<string, string>>({})
 const importing = ref(false)
 const importProgress = ref('')
@@ -351,7 +372,7 @@ const importFromGame = async () => {
       addLog(`${account.accountName}：上架中 ${result.pendingCount} 条`, 'ok')
       addLog(`${account.accountName}：新增 ${result.added} 条，跳过重复 ${result.skipped} 条`, 'ok')
       if (result.tradeBalance !== undefined) {
-        addLog(`${account.accountName}：余额 ${(result.tradeBalance / 10000).toFixed(4)}w`, 'ok')
+        addLog(`${account.accountName}：余额 ${formatNumber(result.tradeBalance)}`, 'ok')
       }
     } catch (err: any) {
       addLog(`${account.accountName} 拉取失败：${err.message}`, 'err')
@@ -384,13 +405,43 @@ const deleteAccount = async (accountId: string) => {
 const deleteAllAccounts = async () => {
   if (!confirm('确定删除当前用户的所有账号吗？此操作不可撤销！')) return
   if (!confirm('再次确认：删除所有账号？')) return
+
+  // 先删除当前用户所有账号下的交易记录，再删除账号
+  const accountIds = authStore.userAccounts.map(a => a.id)
+  for (const id of accountIds) {
+    await clearTradesByAccount(id)
+  }
+
   const result = await authStore.deleteAllAccounts()
   if (result?.success) {
-    alert('所有账号已删除')
+    alert('所有账号及交易记录已删除')
     await ledgerStore.loadTrades()
   } else {
     alert(result?.error || '删除失败')
   }
+}
+
+const clearTradesByAccount = async (accountId: string) => {
+  const all = await db.petTrades.toArray()
+  const toDelete = all.filter(t => t.accountId === accountId).map(t => t.id)
+  if (toDelete.length > 0) {
+    await db.petTrades.bulkDelete(toDelete)
+  }
+  return toDelete.length
+}
+
+const clearAllTrades = async () => {
+  if (!confirm('确定清除当前用户所有账号下的全部交易记录吗？此操作不可撤销！')) return
+  if (!confirm('再次确认：清除所有交易记录？')) return
+
+  const accountIds = authStore.userAccounts.map(a => a.id)
+  let totalDeleted = 0
+  for (const id of accountIds) {
+    totalDeleted += await clearTradesByAccount(id)
+  }
+
+  await ledgerStore.loadTrades()
+  alert(`所有账号交易记录已清除，共 ${totalDeleted} 条，请刷新页面`)
 }
 
 const syncToCloud = async () => {
@@ -532,15 +583,41 @@ const clearAllData = async () => {
   if (!confirm('再次确认：清除所有交易记录？')) return
 
   try {
-    // 只清除当前账号的交易记录
-    const result = await ledgerStore.clearAllTrades()
-    if (result.success) {
-      alert('交易记录已清除')
-    } else {
-      alert('清除失败')
+    const accountId = authStore.currentAccount?.id
+    if (!accountId) {
+      alert('未选择当前账号')
+      return
     }
+
+    const deleted = await clearTradesByAccount(accountId)
+    await ledgerStore.loadTrades()
+    alert(`当前账号交易记录已清除，共 ${deleted} 条`)
   } catch (error) {
     alert('清除失败')
+  }
+}
+
+const clearAllLocalData = async () => {
+  if (!confirm('确定清空本地所有数据吗？包含账号、交易、任务、日记、分类缓存。此操作不可撤销！')) return
+  if (!confirm('再次确认：清空本地全部数据？')) return
+
+  try {
+    await db.transaction('rw', db.users, db.gameAccounts, db.petTrades, db.categories, db.planetDiaries, db.taskTemplates, db.taskRecords, async () => {
+      await db.users.clear()
+      await db.gameAccounts.clear()
+      await db.petTrades.clear()
+      await db.categories.clear()
+      await db.planetDiaries.clear()
+      await db.taskTemplates.clear()
+      await db.taskRecords.clear()
+    })
+
+    await initializeDefaultCategories()
+    localStorage.clear()
+    alert('本地数据内容已清空，页面将刷新')
+    location.reload()
+  } catch (error) {
+    alert('清空失败')
   }
 }
 </script>
@@ -878,6 +955,28 @@ const clearAllData = async () => {
 .btn-import:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.import-loading {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(24, 144, 255, 0.08);
+  color: #1677ff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1677ff;
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.4); opacity: 1; }
 }
 .import-log {
   background: #0f0f1a;

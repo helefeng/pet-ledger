@@ -140,10 +140,8 @@ const expandedKeys = ref<string[]>(['account-group'])
 const activeMenu = computed(() => {
   const path = router.currentRoute.value.path
   if (path === '/') return 'home'
-  if (path === '/overview') return 'overview'
   if (path === '/account') return 'account-home'
   if (path === '/account/add') return 'account-add'
-  if (path === '/account/stats') return 'account-stats'
   if (path === '/account/diary') return 'account-diary'
   if (path === '/account/task') return 'account-task'
   if (path === '/account/calendar') return 'account-calendar'
@@ -164,16 +162,10 @@ const menuOptions: MenuOption[] = [
     children: [
       { label: '账号总览', key: 'account-home' },
       { label: '添加交易', key: 'account-add' },
-      { label: '统计分析', key: 'account-stats' },
       { label: '星球日记', key: 'account-diary' },
       { label: '日常任务', key: 'account-task' },
       { label: '日历页', key: 'account-calendar' },
     ],
-  },
-  {
-    label: '总收益统计',
-    key: 'overview',
-    icon: () => '📈',
   },
   {
     label: '设置',
@@ -186,10 +178,8 @@ const handleMenuSelect = (key: string) => {
   showMobileMenu.value = false
   const routes: Record<string, string> = {
     home: '/',
-    overview: '/overview',
     'account-home': '/account',
     'account-add': '/account/add',
-    'account-stats': '/account/stats',
     'account-diary': '/account/diary',
     'account-task': '/account/task',
     'account-calendar': '/account/calendar',

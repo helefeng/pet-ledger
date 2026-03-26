@@ -19,7 +19,7 @@
     <!-- 今日概览 -->
     <div class="stats-row">
       <div class="stat-card">
-        <span class="stat-value trade-balance">{{ authStore.currentAccount?.tradeBalance !== undefined ? (authStore.currentAccount.tradeBalance / 10000).toFixed(4) + 'w' : '--' }}</span>
+        <span class="stat-value trade-balance">{{ authStore.currentAccount?.tradeBalance !== undefined ? formatNumber(authStore.currentAccount.tradeBalance) : '--' }}</span>
         <span class="stat-label">余额</span>
       </div>
       <div class="stat-card">
@@ -33,6 +33,10 @@
       <div class="stat-card">
         <span class="stat-value profit" :class="{ negative: todayProfit < 0 }">{{ todayProfit >= 0 ? '+' : '' }}{{ formatNumber(Math.abs(todayProfit)) }}</span>
         <span class="stat-label">今日收益</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value profit" :class="{ negative: yesterdayProfit < 0 }">{{ yesterdayProfit >= 0 ? '+' : '' }}{{ formatNumber(Math.abs(yesterdayProfit)) }}</span>
+        <span class="stat-label">昨日卖出</span>
       </div>
       <div class="stat-card">
         <span class="stat-value">{{ taskProgress.completed }}/{{ taskProgress.total }}</span>
@@ -53,11 +57,6 @@
           <span class="action-icon">📔</span>
           <span class="action-label">星球日记</span>
           <span class="action-desc">记录游戏日常</span>
-        </div>
-        <div class="action-card" @click="router.push('/account/stats')">
-          <span class="action-icon">📊</span>
-          <span class="action-label">统计分析</span>
-          <span class="action-desc">查看收益趋势</span>
         </div>
         <div class="action-card" @click="router.push('/account/calendar')">
           <span class="action-icon">🗓️</span>
@@ -83,7 +82,6 @@
         <span class="section-title">待确认卖出 <span class="collapse-arrow">{{ showPending ? '▾' : '▸' }}</span></span>
         <div class="section-header-right" @click.stop>
           <span class="pending-count">共 {{ pendingAccountTrades.length }} 条</span>
-          <button @click="router.push('/account/stats')" class="btn-link">全部 ></button>
         </div>
       </div>
       <div v-show="showPending">
@@ -92,7 +90,7 @@
           <el-table :data="pagedPendingTrades" stripe size="small">
             <el-table-column prop="itemName" label="物品" min-width="120" />
             <el-table-column label="金额" width="110" align="right">
-              <template #default="{ row }">¥{{ formatNumber(row.price * row.quantity) }}</template>
+              <template #default="{ row }">¥{{ formatAmountRaw(row.price * row.quantity) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="日期" width="110" align="center" />
             <el-table-column label="操作" width="130" align="center">
@@ -134,6 +132,10 @@
           {{ importing ? importProgress : '🚀 一键导入' }}
         </button>
       </div>
+      <div v-if="importing" class="import-loading">
+        <span class="loading-dot"></span>
+        <span>正在读取记录，请稍候… {{ importProgress }}</span>
+      </div>
       <div v-if="!gameToken" class="token-tip">请先点击「获取 Token」登录游戏账号</div>
       <div v-if="importLog.length" class="import-log">
         <div v-for="(line, i) in importLog" :key="i" :class="['log-line', line.type]">{{ line.msg }}</div>
@@ -174,7 +176,6 @@
             <button :class="['sort-btn', { active: accountSortBy === 'time' }]" @click="accountSortBy = 'time'">时间</button>
             <button :class="['sort-btn', { active: accountSortBy === 'amount' }]" @click="accountSortBy = 'amount'">金额</button>
           </div>
-          <button @click="router.push('/account/stats')" class="btn-link">全部 ></button>
         </div>
       </div>
       <div v-show="showRecentTrades">
@@ -184,7 +185,7 @@
             <el-table :data="recentTrades" stripe size="small">
               <el-table-column prop="itemName" label="物品" min-width="100" show-overflow-tooltip />
               <el-table-column label="金额" width="110" align="right">
-                <template #default="{ row }">¥{{ formatNumber(row.price * row.quantity) }}</template>
+                <template #default="{ row }">¥{{ formatAmountRaw(row.price * row.quantity) }}</template>
               </el-table-column>
               <el-table-column prop="tradeDate" label="日期" width="110" align="center" />
               <el-table-column label="操作" width="80" align="center">
@@ -221,8 +222,15 @@ const taskStore = useTaskStore()
 
 // 游戏数据导入
 const TOKEN_KEY = 'game-tokens'
-const today = new Date().toISOString().split('T')[0]
-const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+const getLocalDate = (date = new Date()) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const today = getLocalDate()
+const yesterday = getLocalDate(new Date(Date.now() - 86400000))
 const importDateFrom = ref(yesterday)
 const importDateTo = ref(today)
 const importing = ref(false)
@@ -257,6 +265,11 @@ const saveToken = (token: string) => {
 
 const addLog = (msg: string, type = 'info') => {
   importLog.value.push({ msg: `[${new Date().toLocaleTimeString()}] ${msg}`, type })
+}
+
+const formatAmountRaw = (num: number) => {
+  if (num === undefined || num === null) return '--'
+  return Number(num).toLocaleString('zh-CN', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
 }
 
 window.addEventListener('message', (event) => {
@@ -365,7 +378,7 @@ const importFromGame = async () => {
     addLog(`新增 ${result.added} 条，跳过重复 ${result.skipped} 条`, 'ok')
     addLog(`上架中待售：${result.pendingCount} 条`, 'info')
     if (result.tradeBalance !== undefined) {
-      addLog(`余额：${(result.tradeBalance / 10000).toFixed(4)}w`, 'ok')
+      addLog(`余额：${formatNumber(result.tradeBalance)}`, 'ok')
     }
 
     const allAccounts = await db.gameAccounts.toArray()
@@ -391,13 +404,35 @@ const switchAccount = (e: Event) => {
   const id = (e.target as HTMLSelectElement).value
   authStore.switchAccount(id)
   ledgerStore.loadTrades()
+  taskStore.loadTodayRecords()
   recentPage.value = 1
   loadAllAccountTrades()
   loadSavedToken()
 }
 
+const todayRef = ref(getLocalDate())
+const yesterdayRef = ref(getLocalDate(new Date(Date.now() - 86400000)))
+
+// 每天零点自动刷新日期
+const scheduleDayRefresh = () => {
+  const now = new Date()
+  const next = new Date(now)
+  next.setHours(24, 0, 0, 0)
+  setTimeout(() => {
+    todayRef.value = getLocalDate()
+    yesterdayRef.value = getLocalDate(new Date(Date.now() - 86400000))
+    taskStore.loadTodayRecords()
+    scheduleDayRefresh()
+  }, next.getTime() - now.getTime())
+}
+scheduleDayRefresh()
+
 const todayTrades = computed(() =>
-  allAccountTrades.value.filter(t => t.tradeDate === today)
+  allAccountTrades.value.filter(t => t.tradeDate === todayRef.value)
+)
+
+const yesterdayTrades = computed(() =>
+  allAccountTrades.value.filter(t => t.tradeDate === yesterdayRef.value && t.status !== 'pending')
 )
 
 const todayBuyCount = computed(() =>
@@ -410,8 +445,15 @@ const todaySellCount = computed(() =>
 
 const todayProfit = computed(() => {
   return todayTrades.value.reduce((acc, t) => {
-    if (t.type === 'sell' && t.status === 'confirmed') return acc + t.price * t.quantity * 0.95
+    if (t.type === 'sell' && t.status === 'confirmed') return acc + t.price * t.quantity
     if (t.type === 'buy') return acc - t.price * t.quantity
+    return acc
+  }, 0)
+})
+
+const yesterdayProfit = computed(() => {
+  return yesterdayTrades.value.reduce((acc, t) => {
+    if (t.type === 'sell' && t.status === 'confirmed') return acc + t.price * t.quantity
     return acc
   }, 0)
 })
@@ -648,6 +690,28 @@ onMounted(async () => {
   font-size: 12px;
   color: #fa8c16;
   margin-top: 4px;
+}
+.import-loading {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(24, 144, 255, 0.08);
+  color: #1677ff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1677ff;
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.4); opacity: 1; }
 }
 .import-log {
   background: #0f0f1a;

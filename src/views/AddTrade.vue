@@ -1,7 +1,7 @@
 <template>
   <div class="add-trade-container">
     <div class="page-header">
-      <h2>{{ isEditing ? '编辑交易' : '添加交易' }}</h2>
+      <h2>{{ isEditing ? '编辑买入记录' : '添加买入记录' }}</h2>
       <div class="account-info">
         邮箱: <strong>{{ authStore.currentAccount?.gameEmail }}</strong>
       </div>
@@ -9,85 +9,25 @@
 
     <div class="form-card">
       <form @submit.prevent="handleSubmit" class="trade-form">
-        <!-- 交易类型 -->
-        <div class="form-row">
-          <div class="form-group">
-            <label>交易类型 *</label>
-            <div class="type-selector">
-              <button
-                type="button"
-                :class="['type-btn', { active: form.type === 'buy' }]"
-                @click="form.type = 'buy'"
-              >
-                📥 买入
-              </button>
-              <button
-                type="button"
-                :class="['type-btn', { active: form.type === 'sell' }]"
-                @click="form.type = 'sell'"
-              >
-                📤 卖出
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 卖出时的状态选项 -->
-        <div v-if="form.type === 'sell'" class="form-row">
-          <div class="form-group">
-            <label>订单状态 *</label>
-            <select v-model="form.status" required>
-              <option value="pending">待确认（预计收入）</option>
-              <option value="confirmed">已确认（已到账）</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 基本信息 -->
         <div class="form-row">
           <div class="form-group">
             <label>物品名称 *</label>
             <input
-              v-model="form.petName"
+              v-model.trim="form.itemName"
               type="text"
-              placeholder="输入物品名称（宠物或道具）"
-              @input="handlePetNameInput"
+              placeholder="输入物品名称"
               required
-            />
-            <div v-if="petSuggestions.length > 0" class="pet-suggestions">
-              <div
-                v-for="pet in petSuggestions"
-                :key="pet.id"
-                class="suggestion-item"
-                @click="selectPet(pet)"
-              >
-                {{ pet.name }}
-              </div>
-            </div>
-            <div v-if="form.petName && selectedPet" class="pet-preview">
-              ✓ 已选择: {{ selectedPet.name }}
-            </div>
-          </div>
-          <div class="form-group">
-            <label>等级</label>
-            <input
-              v-model.number="form.level"
-              type="number"
-              placeholder="1-100（-1表示不考虑）"
-              min="-1"
-              max="100"
             />
           </div>
         </div>
 
-        <!-- 价格和数量 -->
-        <div class="form-row">
+        <div class="form-row two-col">
           <div class="form-group">
             <label>单价 *</label>
             <input
               v-model.number="form.price"
               type="number"
-              placeholder="输入价格"
+              placeholder="输入单价"
               min="0"
               step="0.01"
               required
@@ -98,7 +38,7 @@
             <input
               v-model.number="form.quantity"
               type="number"
-              placeholder="数量"
+              placeholder="输入数量"
               min="1"
               step="1"
               required
@@ -106,83 +46,10 @@
           </div>
         </div>
 
-        <!-- 性格和特性 -->
-        <div class="form-row">
-          <div class="form-group">
-            <label>性格</label>
-            <select v-model="form.nature">
-              <option value="">不考虑</option>
-              <option v-for="nature in NATURES" :key="nature" :value="nature">
-                {{ nature }}
-              </option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>特性</label>
-            <select v-model="form.ability">
-              <option value="">不考虑</option>
-              <option v-for="ability in ABILITIES" :key="ability" :value="ability">
-                {{ ability }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 个体值和异色 -->
-        <div class="form-row">
-          <div class="form-group">
-            <label>个体值</label>
-            <input
-              v-model.number="form.individual"
-              type="number"
-              placeholder="0-31（-1表示不考虑）"
-              min="-1"
-              max="31"
-              required
-            />
-          </div>
-          <div class="form-group">
-            <label>异色 *</label>
-            <select v-model="form.isShiny" required>
-              <option value="否">否</option>
-              <option value="是">是</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 交易日期 -->
         <div class="form-row">
           <div class="form-group">
             <label>交易日期 *</label>
-            <input
-              v-model="form.tradeDate"
-              type="date"
-              required
-            />
-          </div>
-        </div>
-
-        <!-- 费用计算 -->
-        <div v-if="form.type === 'sell'" class="commission-info">
-          <div class="info-row">
-            <span>单价:</span>
-            <strong>¥{{ formatNumber(form.price) }}</strong>
-          </div>
-          <div class="info-row">
-            <span>数量:</span>
-            <strong>{{ form.quantity }}</strong>
-          </div>
-          <div class="info-row">
-            <span>总价:</span>
-            <strong>¥{{ formatNumber(form.price * form.quantity) }}</strong>
-          </div>
-          <div class="info-row">
-            <span>交易行提成 (5%):</span>
-            <strong class="commission">-¥{{ formatNumber(form.price * form.quantity * 0.05) }}</strong>
-          </div>
-          <div class="info-row total">
-            <span>实际收益:</span>
-            <strong>¥{{ formatNumber(form.price * form.quantity * 0.95) }}</strong>
+            <input v-model="form.tradeDate" type="date" required />
           </div>
         </div>
 
@@ -191,7 +58,7 @@
         <div class="form-actions">
           <button type="button" class="btn-cancel" @click="goBack">取消</button>
           <button type="submit" class="btn-submit" :disabled="loading">
-            {{ loading ? '保存中...' : (isEditing ? '更新交易' : '保存交易') }}
+            {{ loading ? '保存中...' : (isEditing ? '更新记录' : '保存记录') }}
           </button>
         </div>
       </form>
@@ -200,13 +67,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { db } from '@/services/db'
-import { NATURES, ABILITIES, formatNumber } from '@/constants/pet'
-import { PETS_DATABASE } from '@/constants/petDatabase'
 
 const router = useRouter()
 const route = useRoute()
@@ -218,129 +83,78 @@ const error = ref('')
 const isEditing = ref(false)
 const editId = ref('')
 
+const today = () => {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 const form = ref({
-  type: 'buy' as 'buy' | 'sell',
-  status: 'pending' as 'pending' | 'confirmed',
-  petName: '',
+  itemName: '',
   price: 0,
   quantity: 1,
-  nature: '',
-  level: -1,
-  individual: -1,
-  ability: '',
-  tradeDate: new Date().toISOString().split('T')[0],
-  isShiny: '否' as '是' | '否',
+  tradeDate: today(),
 })
 
-// 初始化编辑模式
 onMounted(async () => {
   if (route.params.id) {
     isEditing.value = true
     editId.value = route.params.id as string
 
-    // 先从 store 读，避免重复查询
     let trade = ledgerStore.trades.find(t => t.id === editId.value)
-
-    // 若 store 中没有（刷新后常见），再从 IndexedDB 读取
     if (!trade) {
       trade = await db.petTrades.get(editId.value)
-      if (trade && trade.accountId) {
-        authStore.switchAccount(trade.accountId)
-      }
+      if (trade?.accountId) authStore.switchAccount(trade.accountId)
     }
 
     if (trade) {
       form.value = {
-        type: trade.type as 'buy' | 'sell',
-        status: (trade.status || 'pending') as 'pending' | 'confirmed',
-        petName: trade.itemName,
+        itemName: trade.itemName,
         price: trade.price,
         quantity: trade.quantity,
-        nature: trade.nature,
-        level: trade.level,
-        individual: trade.individual,
-        ability: trade.ability,
         tradeDate: trade.tradeDate,
-        isShiny: trade.isShiny,
       }
     } else {
-      error.value = '未找到要编辑的交易记录'
+      error.value = '未找到要编辑的记录'
     }
   }
 })
 
-const selectedPet = ref<any>(null)
-const petSuggestions = ref<any[]>([])
-
-const handlePetNameInput = () => {
-  const input = form.value.petName.trim()
-  if (!input) {
-    petSuggestions.value = []
-    selectedPet.value = null
-    return
-  }
-
-  // 模糊搜索精灵
-  petSuggestions.value = PETS_DATABASE.filter(pet =>
-    pet.name.includes(input)
-  ).slice(0, 10) // 最多显示10个建议
-}
-
-const selectPet = (pet: any) => {
-  selectedPet.value = pet
-  form.value.petName = pet.name
-  petSuggestions.value = []
-}
-
 const handleSubmit = async () => {
   error.value = ''
-  
-  if (!form.value.petName || form.value.price === 0) {
-    error.value = '请填写物品名称和价格'
-    return
-  }
 
-  if (form.value.type === 'sell' && !form.value.status) {
-    error.value = '请选择订单状态'
+  if (!form.value.itemName || form.value.price <= 0 || form.value.quantity <= 0) {
+    error.value = '请填写完整且有效的内容'
     return
   }
 
   loading.value = true
-
   try {
-    const tradeData: any = {
-      itemName: form.value.petName,
-      type: form.value.type,
+    const tradeData = {
+      itemName: form.value.itemName,
+      type: 'buy' as const,
       price: form.value.price,
       quantity: form.value.quantity,
-      nature: form.value.nature || '不考虑',
-      level: form.value.level,
-      individual: form.value.individual,
-      ability: form.value.ability || '不考虑',
+      nature: '不考虑',
+      level: -1,
+      individual: -1,
+      ability: '不考虑',
       tradeDate: form.value.tradeDate,
-      isShiny: form.value.isShiny,
+      isShiny: '否' as const,
     }
 
-    // 卖出时添加状态字段
-    if (form.value.type === 'sell') {
-      tradeData.status = form.value.status
-    }
-
-    let result
-    if (isEditing.value) {
-      // 编辑模式：按表单提交的状态进行更新
-      result = await ledgerStore.updateTrade(editId.value, tradeData)
-    } else {
-      // 新增模式
-      result = await ledgerStore.addTrade(tradeData)
-    }
+    const result = isEditing.value
+      ? await ledgerStore.updateTrade(editId.value, tradeData)
+      : await ledgerStore.addTrade(tradeData)
 
     if (result.success) {
       router.push('/')
     } else {
       error.value = '保存失败，请重试'
     }
-  } catch (err) {
+  } catch {
     error.value = '保存失败，请重试'
   } finally {
     loading.value = false
@@ -390,15 +204,18 @@ const goBack = () => {
 
 .form-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
+}
+
+.form-row.two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  position: relative;
 }
 
 .form-group label {
@@ -407,116 +224,19 @@ const goBack = () => {
   color: var(--n-text-color-1);
 }
 
-.form-group input,
-.form-group select {
+.form-group input {
   padding: 8px 10px;
   border: 1px solid var(--n-border-color);
   border-radius: 4px;
   font-size: 12px;
   background: var(--n-color);
   color: var(--n-text-color-1);
-  transition: all 0.2s;
 }
 
-.form-group input:focus,
-.form-group select:focus {
+.form-group input:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
-}
-
-.pet-preview {
-  font-size: 12px;
-  color: #667eea;
-  margin-top: 4px;
-  font-weight: 600;
-}
-
-.pet-suggestions {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--n-color);
-  border: 1px solid var(--n-border-color);
-  border-top: none;
-  border-radius: 0 0 4px 4px;
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 10;
-}
-
-.suggestion-item {
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--n-text-color-1);
-  cursor: pointer;
-  transition: all 0.2s;
-  border-bottom: 1px solid var(--n-border-color);
-}
-
-.suggestion-item:last-child {
-  border-bottom: none;
-}
-
-.suggestion-item:hover {
-  background: var(--n-color-hover);
-  color: #667eea;
-}
-
-.type-selector {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.type-btn {
-  padding: 8px;
-  border: 2px solid var(--n-border-color);
-  background: var(--n-color);
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: var(--n-text-color-1);
-}
-
-.type-btn.active {
-  border-color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
-  color: #667eea;
-}
-
-.commission-info {
-  background: rgba(102, 126, 234, 0.05);
-  border: 1px solid rgba(102, 126, 234, 0.2);
-  border-radius: 4px;
-  padding: 10px;
-  font-size: 12px;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 3px 0;
-  color: var(--n-text-color-2);
-}
-
-.info-row strong {
-  color: var(--n-text-color-1);
-}
-
-.info-row.total {
-  border-top: 1px solid rgba(102, 126, 234, 0.2);
-  padding-top: 6px;
-  margin-top: 6px;
-  font-weight: 600;
-  color: var(--n-text-color-1);
-}
-
-.commission {
-  color: #ff4d4f;
 }
 
 .error-message {
@@ -539,30 +259,20 @@ const goBack = () => {
   padding: 8px;
   border: none;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
 .btn-cancel {
-  background: var(--n-color);
-  border: 1px solid var(--n-border-color);
-  color: var(--n-text-color-1);
-}
-
-.btn-cancel:hover {
   background: var(--n-color-hover);
+  color: var(--n-text-color-1);
+  border: 1px solid var(--n-border-color);
 }
 
 .btn-submit {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.btn-submit:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  background: #667eea;
+  color: #fff;
 }
 
 .btn-submit:disabled {
@@ -570,21 +280,9 @@ const goBack = () => {
   cursor: not-allowed;
 }
 
-@media (max-width: 480px) {
-  .add-trade-container {
-    padding: 8px;
-  }
-
-  .form-card {
-    padding: 12px;
-  }
-
-  .form-row {
+@media (max-width: 520px) {
+  .form-row.two-col {
     grid-template-columns: 1fr;
-  }
-
-  .type-selector {
-    grid-template-columns: 1fr 1fr;
   }
 }
 </style>
