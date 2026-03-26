@@ -8,6 +8,12 @@
       </div>
       <div class="welcome-date">{{ todayStr }}</div>
     </div>
+    <div class="home-switcher-row">
+      <select @change="toggleHomeSections" class="home-section-select">
+        <option value="expand">全部展开</option>
+        <option value="collapse">全部收起</option>
+      </select>
+    </div>
 
     <!-- 用户总收益概览 -->
     <div class="stats-overview">
@@ -27,7 +33,7 @@
       </div>
       <div class="stat-card">
         <span class="stat-value">{{ userTotalStats.tradeCount }}</span>
-        <span class="stat-label">总交易数</span>
+        <span class="stat-label">总记录数</span>
       </div>
     </div>
 
@@ -84,12 +90,6 @@
               <template #default="{ row }">¥{{ formatAmountRaw((row.price || 0) * (row.quantity || 0)) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="交易日期" width="120" align="center" />
-            <el-table-column label="操作" width="120" align="center">
-              <template #default="{ row }">
-                <el-button link type="success" size="small" @click="confirmPendingTrade(row.id)">确认</el-button>
-                <el-button link type="primary" size="small" @click="editTrade(row)">编辑</el-button>
-              </template>
-            </el-table-column>
           </el-table>
           <div class="table-pagination">
             <el-pagination
@@ -138,11 +138,6 @@
               <template #default="{ row }">¥{{ formatAmountRaw((row.price || 0) * (row.quantity || 0)) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="交易日期" width="120" align="center" />
-            <el-table-column label="操作" width="90" align="center">
-              <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="editTrade(row)">编辑</el-button>
-              </template>
-            </el-table-column>
           </el-table>
           <div class="table-pagination">
             <el-pagination
@@ -257,6 +252,15 @@ const showPending = ref(true)
 const showRecentTrades = ref(true)
 const showDiaries = ref(true)
 
+const toggleHomeSections = (e: Event) => {
+  const mode = (e.target as HTMLSelectElement).value
+  const expanded = mode === 'expand'
+  showAccounts.value = expanded
+  showPending.value = expanded
+  showRecentTrades.value = expanded
+  showDiaries.value = expanded
+}
+
 let midnightWatcher: ReturnType<typeof setTimeout> | null = null
 
 const loadAllData = async () => {
@@ -343,16 +347,6 @@ const pagedPendingTrades = computed(() => {
   const start = (currentPendingPage.value - 1) * pendingPageSize
   return pendingTrades.value.slice(start, start + pendingPageSize)
 })
-
-const confirmPendingTrade = async (id: string) => {
-  await ledgerStore.updateTrade(id, { status: 'confirmed' })
-  await loadAllData()
-}
-
-const editTrade = (trade: PetTrade) => {
-  authStore.switchAccount(trade.accountId)
-  router.push(`/edit/${trade.id}`)
-}
 
 const goToDiary = (diary: PlanetDiary) => {
   authStore.switchAccount(diary.accountId)
@@ -445,6 +439,21 @@ onUnmounted(() => {
 .greeting { font-size: 16px; opacity: 0.9; }
 .username { font-size: 20px; font-weight: 700; margin-left: 4px; }
 .welcome-date { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+
+.home-switcher-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -8px;
+}
+
+.home-section-select {
+  border: 1px solid var(--n-border-color);
+  background: var(--n-color);
+  color: var(--n-text-color-1);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
 
 .stats-overview {
   display: grid;

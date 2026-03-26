@@ -27,10 +27,6 @@ const routes: RouteRecordRaw[] = [
     redirect: '/account/task',
   },
   {
-    path: '/calendar',
-    redirect: '/account/calendar',
-  },
-  {
     path: '/account',
     name: 'Account',
     component: () => import('@/views/Account.vue'),
@@ -52,12 +48,6 @@ const routes: RouteRecordRaw[] = [
     path: '/account/task',
     name: 'AccountTask',
     component: () => import('@/views/Task.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/account/calendar',
-    name: 'AccountCalendar',
-    component: () => import('@/views/Calendar.vue'),
     meta: { requiresAuth: true },
   },
   {

@@ -14,6 +14,12 @@
           </option>
         </select>
       </div>
+      <div class="section-switcher">
+        <select @change="toggleSectionView" class="account-select">
+          <option value="expand">全部展开</option>
+          <option value="collapse">全部收起</option>
+        </select>
+      </div>
     </div>
 
     <!-- 今日概览 -->
@@ -50,28 +56,49 @@
       <div class="action-grid">
         <div class="action-card" @click="router.push('/account/add')">
           <span class="action-icon">➕</span>
-          <span class="action-label">添加交易</span>
-          <span class="action-desc">记录买入/卖出</span>
+          <span class="action-label">其他交易</span>
+          <span class="action-desc">记录游戏成交明细</span>
         </div>
         <div class="action-card" @click="router.push('/account/diary')">
           <span class="action-icon">📔</span>
           <span class="action-label">星球日记</span>
           <span class="action-desc">记录游戏日常</span>
         </div>
-        <div class="action-card" @click="router.push('/account/calendar')">
-          <span class="action-icon">🗓️</span>
-          <span class="action-label">日历页</span>
-          <span class="action-desc">按日查看汇总明细</span>
-        </div>
         <div class="action-card" @click="router.push('/account/task')">
           <span class="action-icon">✅</span>
           <span class="action-label">日常任务</span>
           <span class="action-desc">查看任务看板</span>
         </div>
-        <div class="action-card" @click="router.push('/settings')">
-          <span class="action-icon">⚙️</span>
-          <span class="action-label">账号设置</span>
-          <span class="action-desc">管理账号信息</span>
+      </div>
+    </div>
+
+    <!-- 游戏数据导入 -->
+    <div class="recent-section">
+      <div class="section-header" @click="showImportPanel = !showImportPanel" style="cursor:pointer">
+        <span class="section-title">🎮 拉取交易记录 <span class="collapse-arrow">{{ showImportPanel ? '▾' : '▸' }}</span></span>
+        <button class="btn-link" @click.stop="readTokenFromGame">{{ gameToken ? '✓ 已有Token' : '获取 Token' }} ></button>
+      </div>
+      <div v-show="showImportPanel">
+        <div class="import-row">
+          <div class="import-date-item">
+            <label>开始日期</label>
+            <input v-model="importDateFrom" type="date" class="date-input" />
+          </div>
+          <div class="import-date-item">
+            <label>截止日期</label>
+            <input v-model="importDateTo" type="date" class="date-input" />
+          </div>
+          <button class="btn-import" :disabled="importing || !gameToken" @click="importFromGame">
+            {{ importing ? importProgress : '🚀 一键导入' }}
+          </button>
+        </div>
+        <div v-if="importing" class="import-loading">
+          <span class="loading-dot"></span>
+          <span>正在读取记录，请稍候… {{ importProgress }}</span>
+        </div>
+        <div v-if="!gameToken" class="token-tip">请先点击「获取 Token」登录游戏账号</div>
+        <div v-if="importLog.length" class="import-log">
+          <div v-for="(line, i) in importLog" :key="i" :class="['log-line', line.type]">{{ line.msg }}</div>
         </div>
       </div>
     </div>
@@ -93,12 +120,6 @@
               <template #default="{ row }">¥{{ formatAmountRaw(row.price * row.quantity) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="日期" width="110" align="center" />
-            <el-table-column label="操作" width="130" align="center">
-              <template #default="{ row }">
-                <el-button link type="success" size="small" @click="confirmTrade(row.id)">确认</el-button>
-                <el-button link type="primary" size="small" @click="router.push(`/edit/${row.id}`)">编辑</el-button>
-              </template>
-            </el-table-column>
           </el-table>
           <div class="recent-pagination">
             <el-pagination
@@ -110,35 +131,6 @@
             />
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- 游戏数据导入 -->
-    <div class="recent-section">
-      <div class="section-header">
-        <span class="section-title">🎮 拉取交易记录</span>
-        <button class="btn-link" @click="readTokenFromGame">{{ gameToken ? '✓ 已有Token' : '获取 Token' }} ></button>
-      </div>
-      <div class="import-row">
-        <div class="import-date-item">
-          <label>开始日期</label>
-          <input v-model="importDateFrom" type="date" class="date-input" />
-        </div>
-        <div class="import-date-item">
-          <label>截止日期</label>
-          <input v-model="importDateTo" type="date" class="date-input" />
-        </div>
-        <button class="btn-import" :disabled="importing || !gameToken" @click="importFromGame">
-          {{ importing ? importProgress : '🚀 一键导入' }}
-        </button>
-      </div>
-      <div v-if="importing" class="import-loading">
-        <span class="loading-dot"></span>
-        <span>正在读取记录，请稍候… {{ importProgress }}</span>
-      </div>
-      <div v-if="!gameToken" class="token-tip">请先点击「获取 Token」登录游戏账号</div>
-      <div v-if="importLog.length" class="import-log">
-        <div v-for="(line, i) in importLog" :key="i" :class="['log-line', line.type]">{{ line.msg }}</div>
       </div>
     </div>
 
@@ -188,11 +180,6 @@
                 <template #default="{ row }">¥{{ formatAmountRaw(row.price * row.quantity) }}</template>
               </el-table-column>
               <el-table-column prop="tradeDate" label="日期" width="110" align="center" />
-              <el-table-column label="操作" width="80" align="center">
-                <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="router.push(`/edit/${row.id}`)">编辑</el-button>
-                </template>
-              </el-table-column>
             </el-table>
           </div>
           <div class="recent-pagination">
@@ -302,45 +289,31 @@ const loginAndGetToken = async () => {
   loginLoading.value = true
   loginError.value = ''
 
-  // 尝试直接用邮箱密码登录（无加密参数版本）
-  try {
-    const res = await fetch(`${FRONT_HOST}/seer/customer/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Origin': FRONT_HOST },
-      body: JSON.stringify({ email: loginEmail.value, password: loginPassword.value }),
-    })
-    const json = await res.json()
-    const token = json?.token || json?.data?.token || json?.data
-    if (token && typeof token === 'string' && token.length > 10) {
-      saveToken(token)
-      showLoginDialog.value = false
-      loginPassword.value = ''
-      addLog(`✓ 登录成功，Token 已保存`, 'ok')
-      loginLoading.value = false
-      return
-    }
-  } catch {}
-
-  // 尝试后端 API
+  // 本地模式下只尝试后端 API，避免前端域名 CORS 报错
   try {
     const res = await fetch(`${API_HOST}/seer/customer/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Origin': FRONT_HOST },
       body: JSON.stringify({ email: loginEmail.value, password: loginPassword.value }),
     })
-    const json = await res.json()
+
+    const raw = await res.text()
+    let json: any = null
+    try { json = JSON.parse(raw) } catch {}
+
     const token = json?.token || json?.data?.token || json?.data
     if (token && typeof token === 'string' && token.length > 10) {
       saveToken(token)
       showLoginDialog.value = false
       loginPassword.value = ''
-      addLog(`✓ 登录成功，Token 已保存`, 'ok')
+      addLog('✓ 登录成功，Token 已保存', 'ok')
       loginLoading.value = false
       return
     }
-    loginError.value = json?.msg || json?.message || '登录失败，服务器需要加密参数'
-  } catch (e: any) {
-    loginError.value = e.message
+
+    loginError.value = json?.msg || json?.message || '自动获取失败，请改用手动粘贴 Token'
+  } catch {
+    loginError.value = '网络异常，请改用手动粘贴 Token'
   }
 
   loginLoading.value = false
@@ -458,7 +431,16 @@ const yesterdayProfit = computed(() => {
   }, 0)
 })
 
+const showImportPanel = ref(true)
 const taskProgress = computed(() => taskStore.todayProgress)
+
+const toggleSectionView = (e: Event) => {
+  const mode = (e.target as HTMLSelectElement).value
+  const expanded = mode === 'expand'
+  showImportPanel.value = expanded
+  showPending.value = expanded
+  showRecentTrades.value = expanded
+}
 
 const allAccountTrades = ref<PetTrade[]>([])
 const recentPage = ref(1)
@@ -510,11 +492,6 @@ const recentTrades = computed(() => {
   return sortedAccountTrades.value.slice(start, start + recentPageSize)
 })
 
-const confirmTrade = async (id: string) => {
-  await ledgerStore.updateTrade(id, { status: 'confirmed' })
-  await loadAllAccountTrades()
-}
-
 onMounted(async () => {
   await ledgerStore.loadTrades()
   await taskStore.loadTemplates()
@@ -562,6 +539,7 @@ onMounted(async () => {
   cursor: pointer;
 }
 .account-select option { background: #764ba2; color: white; }
+.section-switcher { margin-left: 8px; }
 .stats-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

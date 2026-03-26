@@ -144,7 +144,6 @@ const activeMenu = computed(() => {
   if (path === '/account/add') return 'account-add'
   if (path === '/account/diary') return 'account-diary'
   if (path === '/account/task') return 'account-task'
-  if (path === '/account/calendar') return 'account-calendar'
   if (path === '/settings') return 'settings'
   return 'home'
 })
@@ -161,10 +160,9 @@ const menuOptions: MenuOption[] = [
     icon: () => '👤',
     children: [
       { label: '账号总览', key: 'account-home' },
-      { label: '添加交易', key: 'account-add' },
+      { label: '其他交易', key: 'account-add' },
       { label: '星球日记', key: 'account-diary' },
       { label: '日常任务', key: 'account-task' },
-      { label: '日历页', key: 'account-calendar' },
     ],
   },
   {
@@ -182,7 +180,6 @@ const handleMenuSelect = (key: string) => {
     'account-add': '/account/add',
     'account-diary': '/account/diary',
     'account-task': '/account/task',
-    'account-calendar': '/account/calendar',
     settings: '/settings',
   }
 

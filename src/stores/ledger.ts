@@ -29,7 +29,7 @@ export const useLedgerStore = defineStore('ledger', () => {
   }
 
   const generateDailySummaryForDate = async (_date: string) => {
-    // 日结汇总现在在日历页直接展示，不再写入星球日记
+    // 日结汇总仅更新任务进度，不写入日记
   }
 
   const handleDayChanged = async () => {
