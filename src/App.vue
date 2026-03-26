@@ -14,7 +14,7 @@
           @expand="sidebarCollapsed = false"
         >
           <div class="sidebar-header">
-            <h1 v-if="!sidebarCollapsed">🎮 交易平台</h1>
+            <h1 v-if="!sidebarCollapsed">🎮 铁皮交易记录</h1>
             <span v-else>🎮</span>
           </div>
           <n-menu
@@ -40,7 +40,7 @@
           <n-layout-header class="header">
             <div class="header-content">
               <div class="header-left">
-                <h1 v-if="isMobile">🎮 交易平台</h1>
+                <h1 v-if="isMobile">🎮 铁皮交易记录</h1>
               </div>
               <div class="header-center" v-if="authStore.userAccounts.length > 1">
                 <select

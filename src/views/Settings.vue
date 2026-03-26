@@ -491,7 +491,7 @@ const exportCSV = async () => {
     const trades = await db.petTrades.toArray()
     
     // CSV 表头
-    const headers = ['交易ID', '宠物名称', '类型', '单价', '数量', '总价', '性格', '特性', '个体值', '等级', '异色', '提成', '实际收益', '交易日期']
+    const headers = ['交易ID', '物品名称', '类型', '单价', '数量', '总价', '性格', '特性', '个体值', '等级', '异色', '提成', '实际收益', '交易日期']
     
     // CSV 数据行
     const rows = trades.map(t => [
