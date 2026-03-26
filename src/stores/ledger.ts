@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { PetTrade, Statistics } from '@/types'
 import { db, initializeDefaultCategories } from '@/services/db'
-import { SyncService } from '@/services/sync'
 import { useAuthStore } from './auth'
 
 const getToday = () => new Date().toISOString().split('T')[0]
@@ -11,7 +10,6 @@ const LAST_LEDGER_DAY_KEY = 'pet-ledger:last-ledger-day'
 export const useLedgerStore = defineStore('ledger', () => {
   const trades = ref<PetTrade[]>([])
   const loading = ref(false)
-  const lastSyncTime = ref<string | null>(null)
   const currentDay = ref(getToday())
 
   let midnightTimer: ReturnType<typeof setTimeout> | null = null
@@ -69,7 +67,7 @@ export const useLedgerStore = defineStore('ledger', () => {
     }
   }
 
-  // 加载交易记录（先从云端同步）
+  // 加载交易记录（本地）
   const loadTrades = async () => {
     const authStore = useAuthStore()
     if (!authStore.currentAccount) return
@@ -77,17 +75,6 @@ export const useLedgerStore = defineStore('ledger', () => {
     try {
       currentDay.value = getToday()
 
-      // 先从云端拉取最新数据
-      if (authStore.currentUser?.id && authStore.currentAccount?.id) {
-        const remoteTrades = await SyncService.fetchTrades(
-          authStore.currentUser.id,
-          authStore.currentAccount.id
-        )
-
-        await db.petTrades.bulkPut(remoteTrades)
-      }
-
-      // 再从本地读取（仅当日数据，实现 0 点自动重置）
       const allTrades = await db.petTrades.toArray()
       const accountTrades = allTrades.filter(
         t => t.accountId === authStore.currentAccount!.id && t.tradeDate === currentDay.value
@@ -125,14 +112,6 @@ export const useLedgerStore = defineStore('ledger', () => {
         trades.value.unshift(newTrade)
       }
 
-      // 异步上传到云端
-      SyncService.uploadTrade(newTrade).then((result) => {
-        if (result?.success) {
-          newTrade.synced = true
-          db.petTrades.update(newTrade.id, { synced: true })
-        }
-      })
-
       return { success: true, trade: newTrade }
     } catch (error) {
       console.error('添加交易失败:', error)
@@ -145,7 +124,6 @@ export const useLedgerStore = defineStore('ledger', () => {
     try {
       await db.petTrades.delete(id)
       trades.value = trades.value.filter((t) => t.id !== id)
-      await SyncService.deleteTrade(id)
       return { success: true }
     } catch (error) {
       console.error('删除交易失败:', error)
@@ -181,7 +159,6 @@ export const useLedgerStore = defineStore('ledger', () => {
         }
       }
 
-      await SyncService.updateTrade(updatedTrade)
       return { success: true }
     } catch (error) {
       console.error('更新交易失败:', error)
@@ -220,35 +197,6 @@ export const useLedgerStore = defineStore('ledger', () => {
 
   const recentTrades = computed(() => trades.value.slice(0, 20))
 
-  const syncWithCloud = async () => {
-    const authStore = useAuthStore()
-    if (!authStore.currentUser?.id || !authStore.currentAccount?.id) return { success: false }
-
-    loading.value = true
-    try {
-      const userId = authStore.currentUser.id
-      const accountId = authStore.currentAccount.id
-
-      const allAccountTrades = (await db.petTrades.toArray()).filter(t => t.accountId === accountId)
-      await SyncService.uploadUnsyncedTrades(allAccountTrades)
-
-      const result = await SyncService.fullSync(userId, accountId, lastSyncTime.value || undefined)
-
-      if (result.success && result.trades.length > 0) {
-        await db.petTrades.bulkPut(result.trades.map(remote => ({ ...remote, synced: true })))
-        await loadTrades()
-      }
-
-      lastSyncTime.value = new Date().toISOString()
-      return { success: true }
-    } catch (error) {
-      console.error('云同步失败:', error)
-      return { success: false, error }
-    } finally {
-      loading.value = false
-    }
-  }
-
   const clearAllTrades = async () => {
     const authStore = useAuthStore()
     try {
@@ -263,10 +211,6 @@ export const useLedgerStore = defineStore('ledger', () => {
         await db.petTrades.delete(t.id)
       }
       trades.value = []
-
-      if (authStore.currentUser?.id) {
-        await SyncService.clearAllTrades(authStore.currentUser.id, accountId)
-      }
 
       return { success: true }
     } catch (error) {
@@ -286,7 +230,6 @@ export const useLedgerStore = defineStore('ledger', () => {
     deleteTrade,
     updateTrade,
     clearAllTrades,
-    syncWithCloud,
     generateDailySummaryForDate,
   }
 })

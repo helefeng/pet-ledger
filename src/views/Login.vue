@@ -2,8 +2,8 @@
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <h1>🎮 宠物交易平台</h1>
-        <p>游戏宠物交易行</p>
+        <h1>🎮 铁皮交易记录</h1>
+        <p class="privacy-tip">🔒 账号和数据仅保存在当前浏览器，不会上传到服务器</p>
       </div>
 
       <div class="login-tabs">
@@ -125,6 +125,16 @@ const handleSubmit = async () => {
   font-size: 14px;
   color: #999;
   margin: 0;
+}
+
+.privacy-tip {
+  margin-top: 10px !important;
+  font-size: 12px !important;
+  color: #667eea !important;
+  background: rgba(102, 126, 234, 0.08);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
 .login-tabs {

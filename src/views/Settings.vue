@@ -6,6 +6,7 @@
 
     <div class="settings-section">
       <h3>账户信息</h3>
+      <p class="local-only-tip">🔒 当前为本地模式：账号和数据仅保存在此浏览器，不会上传到服务器。</p>
       <div class="setting-item">
         <span class="label">用户名:</span>
         <span class="value">{{ authStore.currentUser?.username }}</span>
@@ -33,7 +34,6 @@
       <button @click="showNewAccountDialog = true" class="btn-add-account">
         ➕ 新建账号
       </button>
-      <button @click="syncToCloud" class="btn-action">☁️ 同步本地到云端</button>
     </div>
 
     <div class="settings-section">
@@ -444,15 +444,6 @@ const clearAllTrades = async () => {
   alert(`所有账号交易记录已清除，共 ${totalDeleted} 条，请刷新页面`)
 }
 
-const syncToCloud = async () => {
-  const result = await authStore.syncLocalToCloud()
-  if (result?.success) {
-    alert('本地数据已同步到云端')
-  } else {
-    alert('同步失败，请检查网络')
-  }
-}
-
 const createNewAccount = async () => {
   if (!newAccountName.value.trim() || !newAccountEmail.value.trim()) {
     alert('请填写账号名称和游戏邮箱')
@@ -662,6 +653,17 @@ const clearAllLocalData = async () => {
   margin: 0 0 8px 0;
   color: var(--n-text-color-1);
   font-weight: 600;
+}
+
+.local-only-tip {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(102, 126, 234, 0.25);
+  background: rgba(102, 126, 234, 0.08);
+  color: #5b6fd9;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .setting-item {

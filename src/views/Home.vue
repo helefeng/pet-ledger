@@ -223,7 +223,6 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { db } from '@/services/db'
-import { SyncService } from '@/services/sync'
 import { formatNumber } from '@/constants/pet'
 import type { PetTrade, PlanetDiary } from '@/types'
 
@@ -276,27 +275,6 @@ const loadAllData = async () => {
   if (currentDiaryPage.value > Math.max(1, Math.ceil(allDiaries.value.length / diaryPageSize))) {
     currentDiaryPage.value = 1
   }
-
-  // 后台拉云端全量并回写本地，避免阻塞首页渲染
-  void (async () => {
-    const remoteDiaries = await SyncService.fetchDiariesByUserId(userId)
-    if (!remoteDiaries.length) return
-
-    // 严格校验，只写入当前用户的日记
-    const validDiaries = remoteDiaries.filter(d => d.userId === userId)
-    if (!validDiaries.length) return
-
-    await db.planetDiaries.bulkPut(validDiaries)
-
-    const refreshed = await db.planetDiaries.toArray()
-    allDiaries.value = refreshed.filter(d => d.userId === userId)
-    const freshTrades = (await db.petTrades.toArray()).filter(t => t.userId === userId)
-    allHistoryTrades.value = freshTrades
-
-    if (currentDiaryPage.value > Math.max(1, Math.ceil(allDiaries.value.length / diaryPageSize))) {
-      currentDiaryPage.value = 1
-    }
-  })()
 }
 
 const scheduleMidnightRefresh = () => {

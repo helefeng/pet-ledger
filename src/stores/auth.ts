@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { User, GameAccount } from '@/types'
 import { db } from '@/services/db'
-import { SyncService } from '@/services/sync'
 
 export const useAuthStore = defineStore('auth', () => {
   const currentUser = ref<User | null>(null)
@@ -16,13 +15,6 @@ export const useAuthStore = defineStore('auth', () => {
   const register = async (username: string, password: string) => {
     loading.value = true
     try {
-      // 先检查云端是否存在
-      const remoteUser = await SyncService.fetchUserByUsername(username)
-      if (remoteUser) {
-        throw new Error('用户名已存在')
-      }
-
-      // 再检查本地
       const allUsers = await db.users.toArray()
       const existing = allUsers.find(u => u.username === username)
       if (existing) {
@@ -37,9 +29,6 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       await db.users.add(user)
-      // 同步到云端
-      await SyncService.uploadUser(user)
-
       currentUser.value = user
       localStorage.setItem('currentUser', JSON.stringify(user))
       return { success: true }
@@ -55,22 +44,6 @@ export const useAuthStore = defineStore('auth', () => {
   const login = async (username: string, password: string) => {
     loading.value = true
     try {
-      // 优先从云端验证
-      const remoteUser = await SyncService.fetchUserByUsername(username)
-
-      if (remoteUser) {
-        if (remoteUser.password !== password) {
-          throw new Error('用户名或密码错误')
-        }
-        // 云端用户同步到本地
-        await db.users.put(remoteUser)
-        currentUser.value = remoteUser
-        localStorage.setItem('currentUser', JSON.stringify(remoteUser))
-        await loadUserAccounts(true)
-        return { success: true }
-      }
-
-      // 云端没有则查本地
       const allUsers = await db.users.toArray()
       const user = allUsers.find(u => u.username === username)
       if (!user || user.password !== password) {
@@ -79,9 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       currentUser.value = user
       localStorage.setItem('currentUser', JSON.stringify(user))
-      // 将本地用户上传云端
-      await SyncService.uploadUser(user)
-      await loadUserAccounts(true)
+      await loadUserAccounts()
       return { success: true }
     } catch (error) {
       console.error('登录失败:', error)
@@ -100,21 +71,11 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('currentAccountId')
   }
 
-  // 加载用户的所有账号（syncFromCloud: 是否从云端同步）
-  const loadUserAccounts = async (syncFromCloud = false) => {
+  // 加载用户的所有账号
+  const loadUserAccounts = async () => {
     if (!currentUser.value) return
 
     try {
-      if (syncFromCloud) {
-        // 从云端拉取账号
-        const remoteAccounts = await SyncService.fetchAccountsByUserId(currentUser.value.id)
-        for (const acc of remoteAccounts) {
-          // 保留本地已有的扩展字段（如 tradeBalance）
-          const local = await db.gameAccounts.get(acc.id)
-          await db.gameAccounts.put({ ...acc, ...(local ? { tradeBalance: local.tradeBalance, tradeBalanceUpdatedAt: local.tradeBalanceUpdatedAt } : {}) })
-        }
-      }
-
       const allAccounts = await db.gameAccounts.toArray()
       // 去重：同一 userId 下相同 id 只保留一条
       const seen = new Set<string>()
@@ -159,12 +120,6 @@ export const useAuthStore = defineStore('auth', () => {
         return { success: false, error: '该游戏邮箱已被使用' }
       }
 
-      // 检查云端是否已有相同邮箱
-      const remoteAccounts = await SyncService.fetchAccountsByEmail(gameEmail)
-      if (remoteAccounts.length > 0) {
-        return { success: false, error: '该游戏邮箱已被使用' }
-      }
-
       const account: GameAccount = {
         id: `account_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         userId: currentUser.value.id,
@@ -174,8 +129,6 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       await db.gameAccounts.add(account)
-      // 同步到云端
-      await SyncService.uploadAccount(account)
 
       userAccounts.value.push(account)
       currentAccount.value = account
@@ -191,7 +144,6 @@ export const useAuthStore = defineStore('auth', () => {
   const deleteAccount = async (accountId: string) => {
     try {
       await db.gameAccounts.delete(accountId)
-      await SyncService.deleteAccount(accountId)
       userAccounts.value = userAccounts.value.filter((a) => a.id !== accountId)
 
       if (currentAccount.value?.id === accountId) {
@@ -208,13 +160,11 @@ export const useAuthStore = defineStore('auth', () => {
   const deleteAllAccounts = async () => {
     if (!currentUser.value) return { success: false, error: '未登录' }
     try {
-      // 从本地数据库查询当前用户的所有账号
       const allAccounts = await db.gameAccounts.toArray()
       const myAccounts = allAccounts.filter(a => a.userId === currentUser.value!.id)
-      
+
       for (const account of myAccounts) {
         await db.gameAccounts.delete(account.id)
-        await SyncService.deleteAccount(account.id)
       }
       userAccounts.value = []
       currentAccount.value = null
@@ -222,23 +172,6 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (error) {
       console.error('删除所有账号失败:', error)
       return { success: false, error: (error as Error).message }
-    }
-  }
-
-  // 强制上传本地数据到云端
-  const syncLocalToCloud = async () => {
-    if (!currentUser.value) return { success: false }
-    try {
-      // 上传用户
-      await SyncService.uploadUser(currentUser.value)
-      // 上传所有账号
-      for (const account of userAccounts.value) {
-        await SyncService.uploadAccount(account)
-      }
-      return { success: true }
-    } catch (error) {
-      console.error('同步到云端失败:', error)
-      return { success: false, error }
     }
   }
 
@@ -258,7 +191,7 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         const user = JSON.parse(savedUser) as User
         currentUser.value = user
-        await loadUserAccounts(true) // 从云端同步账号
+        await loadUserAccounts()
       } catch (error) {
         console.error('恢复登录状态失败:', error)
         localStorage.removeItem('currentUser')
@@ -280,7 +213,6 @@ export const useAuthStore = defineStore('auth', () => {
     deleteAccount,
     deleteAllAccounts,
     switchAccount,
-    syncLocalToCloud,
     restoreSession,
   }
 })

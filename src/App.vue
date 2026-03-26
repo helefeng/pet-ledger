@@ -223,8 +223,6 @@ onMounted(async () => {
   if (authStore.currentUser?.id && authStore.currentAccount?.id) {
     await diaryStore.loadDiaries()
   }
-  // 自动从云端拉取最新数据
-  ledgerStore.syncWithCloud()
   checkMobile()
   window.addEventListener('resize', checkMobile)
 })
