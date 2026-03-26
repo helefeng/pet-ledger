@@ -31,6 +31,9 @@ export interface PetTrade {
   status?: TradeStatus // 订单状态（卖出时使用）
   price: number
   quantity: number
+  sourceAmount?: number // 交易行原始金额（优先用于展示）
+  tradeCurrency?: 'bean' | 'rmb' // 交易币种（默认豆子）
+  showInRmbPanel?: boolean // RMB 轻量面板中是否展示
   nature: string // 性格
   level: number // 等级
   individual: number // 个体值 0-31

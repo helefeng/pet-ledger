@@ -37,11 +37,11 @@
         <span class="stat-label">今日卖出</span>
       </div>
       <div class="stat-card">
-        <span class="stat-value profit" :class="{ negative: todayProfit < 0 }">{{ todayProfit >= 0 ? '+' : '' }}{{ formatNumber(Math.abs(todayProfit)) }}</span>
-        <span class="stat-label">今日收益</span>
+        <span class="stat-value profit" :class="{ negative: todayProfit < 0 }">{{ todayProfit >= 0 ? '+' : '' }}{{ formatNumber(todayProfit) }}</span>
+        <span class="stat-label">今日收支</span>
       </div>
       <div class="stat-card">
-        <span class="stat-value profit" :class="{ negative: yesterdayProfit < 0 }">{{ yesterdayProfit >= 0 ? '+' : '' }}{{ formatNumber(Math.abs(yesterdayProfit)) }}</span>
+        <span class="stat-value profit" :class="{ negative: yesterdayProfit < 0 }">{{ yesterdayProfit >= 0 ? '+' : '' }}{{ formatNumber(yesterdayProfit) }}</span>
         <span class="stat-label">昨日卖出</span>
       </div>
       <div class="stat-card">
@@ -68,6 +68,53 @@
           <span class="action-icon">✅</span>
           <span class="action-label">日常任务</span>
           <span class="action-desc">查看任务看板</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RMB 使用（轻量化） -->
+    <div class="recent-section">
+      <div class="section-header" @click="showRmbPanel = !showRmbPanel" style="cursor:pointer">
+        <span class="section-title">RMB 使用 <span class="collapse-arrow">{{ showRmbPanel ? '▾' : '▸' }}</span></span>
+        <div class="section-header-right" @click.stop>
+          <input v-model.trim="rmbKeyword" class="table-search-input" placeholder="搜索物品" />
+          <span class="pending-count">共 {{ formatSearchCount(filteredRmbTrades.length, rmbTrades.length, rmbKeyword) }} 条</span>
+          <div class="sort-btns">
+            <button :class="['sort-btn', { active: rmbSortBy === 'time' }]" @click.stop="rmbSortBy = 'time'">时间</button>
+            <button :class="['sort-btn', { active: rmbSortBy === 'amount' }]" @click.stop="rmbSortBy = 'amount'">金额</button>
+          </div>
+        </div>
+      </div>
+      <div v-show="showRmbPanel">
+        <div v-if="filteredRmbTrades.length === 0" class="empty-tip">暂无 RMB 记录</div>
+        <div v-else class="table-wrap">
+          <el-table :data="filteredRmbTrades" stripe size="small">
+            <el-table-column prop="itemName" label="用途" min-width="120" show-overflow-tooltip />
+            <el-table-column label="方向" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.type === 'buy' ? 'danger' : 'success'" size="small">
+                  {{ row.type === 'buy' ? '买入' : '卖出' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="金额" width="120" align="right">
+              <template #default="{ row }">
+                <span :class="row.type === 'buy' ? 'amount-negative' : 'amount-positive'">
+                  {{ row.type === 'buy' ? '-' : '+' }}¥{{ formatTradeAmount(row) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="tradeDate" label="日期" width="110" align="center" />
+            <el-table-column label="操作" width="130" align="center">
+              <template #default="{ row }">
+                <div v-if="canOperateTrade(row)" class="table-actions">
+                  <button class="table-action-btn edit" @click="editTrade(row.id)">编辑</button>
+                  <button class="table-action-btn delete" @click="deleteTrade(row.id)">删除</button>
+                </div>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
       </div>
     </div>
@@ -108,16 +155,21 @@
       <div class="section-header" @click="showPending = !showPending" style="cursor:pointer">
         <span class="section-title">待确认卖出 <span class="collapse-arrow">{{ showPending ? '▾' : '▸' }}</span></span>
         <div class="section-header-right" @click.stop>
-          <span class="pending-count">共 {{ pendingAccountTrades.length }} 条</span>
+          <input v-model.trim="pendingKeyword" class="table-search-input" placeholder="搜索物品" />
+          <span class="pending-count">共 {{ formatSearchCount(filteredPendingAccountTrades.length, pendingAccountTrades.length, pendingKeyword) }} 条</span>
+          <div class="sort-btns">
+            <button :class="['sort-btn', { active: pendingSortBy === 'time' }]" @click.stop="pendingSortBy = 'time'">时间</button>
+            <button :class="['sort-btn', { active: pendingSortBy === 'amount' }]" @click.stop="pendingSortBy = 'amount'">金额</button>
+          </div>
         </div>
       </div>
       <div v-show="showPending">
-        <div v-if="pendingAccountTrades.length === 0" class="empty-tip">暂无待确认卖出</div>
+        <div v-if="filteredPendingAccountTrades.length === 0" class="empty-tip">暂无待确认卖出</div>
         <div v-else class="table-wrap">
           <el-table :data="pagedPendingTrades" stripe size="small">
             <el-table-column prop="itemName" label="物品" min-width="120" />
             <el-table-column label="金额" width="110" align="right">
-              <template #default="{ row }">¥{{ formatAmountRaw(row.price * row.quantity) }}</template>
+              <template #default="{ row }">¥{{ formatTradeAmount(row) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="日期" width="110" align="center" />
           </el-table>
@@ -126,7 +178,7 @@
               v-model:current-page="pendingPage"
               :page-size="pendingPageSize"
               layout="prev, pager, next"
-              :total="pendingAccountTrades.length"
+              :total="filteredPendingAccountTrades.length"
               size="small" background
             />
           </div>
@@ -164,6 +216,8 @@
             <button :class="['tab-btn', { active: accountTradeTab === 'sell' }]" @click="accountTradeTab = 'sell'; recentPage = 1">卖出 <span class="tab-count">{{ confirmedSellTrades.length }}</span></button>
             <button :class="['tab-btn', { active: accountTradeTab === 'buy' }]" @click="accountTradeTab = 'buy'; recentPage = 1">买入 <span class="tab-count">{{ confirmedBuyTrades.length }}</span></button>
           </div>
+          <input v-model.trim="recentKeyword" class="table-search-input" placeholder="搜索物品" />
+          <span class="pending-count">共 {{ formatSearchCount(filteredRecentTrades.length, sortedAccountTrades.length, recentKeyword) }} 条</span>
           <div class="sort-btns">
             <button :class="['sort-btn', { active: accountSortBy === 'time' }]" @click="accountSortBy = 'time'">时间</button>
             <button :class="['sort-btn', { active: accountSortBy === 'amount' }]" @click="accountSortBy = 'amount'">金额</button>
@@ -171,19 +225,39 @@
         </div>
       </div>
       <div v-show="showRecentTrades">
-        <div v-if="recentTrades.length === 0" class="empty-tip">暂无{{ accountTradeTab === 'buy' ? '买入' : '卖出' }}记录</div>
+        <div v-if="filteredRecentTrades.length === 0" class="empty-tip">暂无{{ accountTradeTab === 'buy' ? '买入' : '卖出' }}记录</div>
         <div v-else>
           <div class="table-wrap">
             <el-table :data="recentTrades" stripe size="small">
-              <el-table-column prop="itemName" label="物品" min-width="100" show-overflow-tooltip />
+              <el-table-column label="物品" min-width="100" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span>{{ row.itemName }}</span>
+                  <el-tag v-if="row.tradeCurrency === 'rmb'" size="small" type="danger" effect="plain" style="margin-left:6px">RMB</el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="金额" width="110" align="right">
-                <template #default="{ row }">¥{{ formatAmountRaw(row.price * row.quantity) }}</template>
+                <template #default="{ row }">¥{{ formatTradeAmount(row) }}</template>
               </el-table-column>
               <el-table-column prop="tradeDate" label="日期" width="110" align="center" />
+              <el-table-column label="操作" width="130" align="center">
+                <template #default="{ row }">
+                  <div v-if="canOperateTrade(row)" class="table-actions">
+                    <button
+                      class="table-action-btn edit"
+                      @click="editTrade(row.id)"
+                    >编辑</button>
+                    <button
+                      class="table-action-btn delete"
+                      @click="deleteTrade(row.id)"
+                    >删除</button>
+                  </div>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
           <div class="recent-pagination">
-            <el-pagination v-model:current-page="recentPage" :page-size="recentPageSize" layout="prev, pager, next" :total="sortedAccountTrades.length" size="small" background />
+            <el-pagination v-model:current-page="recentPage" :page-size="recentPageSize" layout="prev, pager, next" :total="filteredRecentTrades.length" size="small" background />
           </div>
         </div>
       </div>
@@ -193,7 +267,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { useTaskStore } from '@/stores/task'
@@ -202,7 +276,11 @@ import { SyncService } from '@/services/sync'
 import { formatNumber } from '@/constants/pet'
 import type { PetTrade } from '@/types'
 
+const formatSearchCount = (filtered: number, total: number, keyword: string) =>
+  keyword.trim() ? `${filtered}/${total}` : `${total}`
+
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const ledgerStore = useLedgerStore()
 const taskStore = useTaskStore()
@@ -256,7 +334,25 @@ const addLog = (msg: string, type = 'info') => {
 
 const formatAmountRaw = (num: number) => {
   if (num === undefined || num === null) return '--'
-  return Number(num).toLocaleString('zh-CN', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+  return formatNumber(Number(num))
+}
+const formatBeanAmount = (num: number) => {
+  if (num === undefined || num === null) return '--'
+  const value = Number(num)
+  const abs = Math.abs(value)
+  const sign = value < 0 ? '-' : ''
+
+  if (abs >= 10000) {
+    const rounded = Math.round((abs / 10000) * 100) / 100
+    return sign + rounded.toFixed(2).replace(/\.?0+$/, '') + 'w'
+  }
+
+  return sign + Math.trunc(abs).toString()
+}
+const getTradeAmount = (trade: PetTrade) => Number(trade.sourceAmount ?? ((trade.price || 0) * (trade.quantity || 0)))
+const formatTradeAmount = (trade: PetTrade) => {
+  const amount = getTradeAmount(trade)
+  return trade.tradeCurrency === 'rmb' ? formatAmountRaw(amount) : formatBeanAmount(amount)
 }
 
 window.addEventListener('message', (event) => {
@@ -409,15 +505,16 @@ const yesterdayTrades = computed(() =>
 )
 
 const todayBuyCount = computed(() =>
-  todayTrades.value.filter(t => t.type === 'buy').length
+  todayTrades.value.filter(t => t.type === 'buy' && t.tradeCurrency !== 'rmb').length
 )
 
 const todaySellCount = computed(() =>
-  todayTrades.value.filter(t => t.type === 'sell' && t.status === 'confirmed').length
+  todayTrades.value.filter(t => t.type === 'sell' && t.status === 'confirmed' && t.tradeCurrency !== 'rmb').length
 )
 
 const todayProfit = computed(() => {
   return todayTrades.value.reduce((acc, t) => {
+    if (t.tradeCurrency === 'rmb') return acc
     if (t.type === 'sell' && t.status === 'confirmed') return acc + t.price * t.quantity
     if (t.type === 'buy') return acc - t.price * t.quantity
     return acc
@@ -426,12 +523,14 @@ const todayProfit = computed(() => {
 
 const yesterdayProfit = computed(() => {
   return yesterdayTrades.value.reduce((acc, t) => {
+    if (t.tradeCurrency === 'rmb') return acc
     if (t.type === 'sell' && t.status === 'confirmed') return acc + t.price * t.quantity
     return acc
   }, 0)
 })
 
 const showImportPanel = ref(true)
+const showRmbPanel = ref(false)
 const taskProgress = computed(() => taskStore.todayProgress)
 
 const toggleSectionView = (e: Event) => {
@@ -440,6 +539,7 @@ const toggleSectionView = (e: Event) => {
   showImportPanel.value = expanded
   showPending.value = expanded
   showRecentTrades.value = expanded
+  showRmbPanel.value = expanded
 }
 
 const allAccountTrades = ref<PetTrade[]>([])
@@ -447,6 +547,11 @@ const recentPage = ref(1)
 const recentPageSize = 5
 const pendingPage = ref(1)
 const pendingPageSize = 5
+const pendingSortBy = ref<'time' | 'amount'>('time')
+const pendingKeyword = ref('')
+const rmbSortBy = ref<'time' | 'amount'>('time')
+const rmbKeyword = ref('')
+const recentKeyword = ref('')
 
 const loadAllAccountTrades = async () => {
   if (!authStore.currentAccount?.id || !authStore.currentUser?.id) return
@@ -459,17 +564,32 @@ const loadAllAccountTrades = async () => {
     .then(arr => arr.reverse())
 }
 
-const pendingAccountTrades = computed(() =>
-  allAccountTrades.value.filter(t => t.type === 'sell' && t.status === 'pending')
-)
+const pendingAccountTrades = computed(() => {
+  const list = allAccountTrades.value.filter(t => t.type === 'sell' && t.status === 'pending')
+
+  if (pendingSortBy.value === 'amount') {
+    return list.sort((a, b) => getTradeAmount(b) - getTradeAmount(a))
+  }
+
+  return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+})
+
+const filteredPendingAccountTrades = computed(() => {
+  const keyword = pendingKeyword.value.trim().toLowerCase()
+  if (!keyword) return pendingAccountTrades.value
+  return pendingAccountTrades.value.filter(t => (t.itemName || '').toLowerCase().includes(keyword))
+})
 
 const pagedPendingTrades = computed(() => {
   const start = (pendingPage.value - 1) * pendingPageSize
-  return pendingAccountTrades.value.slice(start, start + pendingPageSize)
+  return filteredPendingAccountTrades.value.slice(start, start + pendingPageSize)
 })
 
-const confirmedTrades = computed(() =>
-  allAccountTrades.value.filter(t => t.status === 'confirmed')
+const confirmedBuyTrades = computed(() =>
+  allAccountTrades.value.filter(t => t.type === 'buy' && t.tradeCurrency !== 'rmb')
+)
+const confirmedSellTrades = computed(() =>
+  allAccountTrades.value.filter(t => t.type === 'sell' && t.status === 'confirmed' && t.tradeCurrency !== 'rmb')
 )
 
 // Tab 与排序
@@ -478,8 +598,21 @@ const accountSortBy = ref<'time' | 'amount'>('time')
 const showPending = ref(true)
 const showRecentTrades = ref(true)
 
-const confirmedBuyTrades = computed(() => confirmedTrades.value.filter(t => t.type === 'buy'))
-const confirmedSellTrades = computed(() => confirmedTrades.value.filter(t => t.type === 'sell'))
+const canOperateTrade = (trade: PetTrade) =>
+  !trade.id.startsWith('import_') && !trade.id.startsWith('listing_')
+
+const editTrade = (tradeId: string) => {
+  router.push(`/edit/${tradeId}?returnTo=account`)
+}
+
+const deleteTrade = async (tradeId: string) => {
+  const trade = allAccountTrades.value.find(t => t.id === tradeId)
+  if (!trade || !canOperateTrade(trade)) return
+  if (!confirm('确定删除这条手动记录吗？')) return
+  await db.petTrades.delete(tradeId)
+  await loadAllAccountTrades()
+  await ledgerStore.loadTrades()
+}
 
 const sortedAccountTrades = computed(() => {
   const list = accountTradeTab.value === 'buy' ? [...confirmedBuyTrades.value] : [...confirmedSellTrades.value]
@@ -487,9 +620,31 @@ const sortedAccountTrades = computed(() => {
   return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 })
 
+const filteredRecentTrades = computed(() => {
+  const keyword = recentKeyword.value.trim().toLowerCase()
+  if (!keyword) return sortedAccountTrades.value
+  return sortedAccountTrades.value.filter(t => (t.itemName || '').toLowerCase().includes(keyword))
+})
+
 const recentTrades = computed(() => {
   const start = (recentPage.value - 1) * recentPageSize
-  return sortedAccountTrades.value.slice(start, start + recentPageSize)
+  return filteredRecentTrades.value.slice(start, start + recentPageSize)
+})
+
+const rmbTrades = computed(() => {
+  const list = allAccountTrades.value.filter(t => t.tradeCurrency === 'rmb')
+
+  if (rmbSortBy.value === 'amount') {
+    return list.sort((a, b) => getTradeAmount(b) - getTradeAmount(a))
+  }
+
+  return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+})
+
+const filteredRmbTrades = computed(() => {
+  const keyword = rmbKeyword.value.trim().toLowerCase()
+  if (!keyword) return rmbTrades.value
+  return rmbTrades.value.filter(t => (t.itemName || '').toLowerCase().includes(keyword))
 })
 
 onMounted(async () => {
@@ -498,6 +653,19 @@ onMounted(async () => {
   await taskStore.loadTodayRecords()
   await loadAllAccountTrades()
   loadSavedToken()
+
+  if (route.query.focus === 'rmb') {
+    showRmbPanel.value = true
+    showRecentTrades.value = false
+  }
+
+  if (route.query.refreshTrades === '1') {
+    await loadAllAccountTrades()
+    await ledgerStore.loadTrades()
+    const cleanQuery = { ...route.query }
+    delete cleanQuery.refreshTrades
+    router.replace({ path: route.path, query: cleanQuery })
+  }
 })
 </script>
 
@@ -606,6 +774,19 @@ onMounted(async () => {
 .sort-btns { display: flex; gap: 2px; }
 .sort-btn { padding: 3px 8px; border: 1px solid var(--n-border-color); border-radius: 4px; font-size: 11px; cursor: pointer; background: transparent; color: var(--n-text-color-2); }
 .sort-btn.active { border-color: #667eea; color: #667eea; background: rgba(102,126,234,0.08); }
+.table-search-input {
+  width: 120px;
+  padding: 4px 8px;
+  border: 1px solid var(--n-border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--n-color);
+  color: var(--n-text-color-1);
+}
+.table-search-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
 .recent-pagination {
   display: flex;
   justify-content: flex-end;
@@ -745,6 +926,36 @@ onMounted(async () => {
   padding: 0;
 }
 .btn-link:hover { color: #5568d3; }
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 72px;
+}
+
+.table-action-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.table-action-btn.edit {
+  color: #1677ff;
+}
+
+.table-action-btn.delete {
+  color: #ff4d4f;
+}
+
+.table-action-btn:hover {
+  opacity: 0.85;
+  text-decoration: underline;
+}
+
 .section-count {
   font-size: 12px;
   color: var(--n-text-color-2);
@@ -753,6 +964,14 @@ onMounted(async () => {
 .pending-count {
   font-size: 12px;
   color: #fa8c16;
+  font-weight: 600;
+}
+.amount-positive {
+  color: #52c41a;
+  font-weight: 600;
+}
+.amount-negative {
+  color: #ff4d4f;
   font-weight: 600;
 }
 .table-wrap { width: 100%; overflow-x: auto; }

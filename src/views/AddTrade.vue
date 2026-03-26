@@ -1,7 +1,7 @@
 <template>
   <div class="add-trade-container">
     <div class="page-header">
-      <h2>{{ isEditing ? '编辑买入记录' : '添加买入记录' }}</h2>
+      <h2>{{ isEditing ? '编辑交易记录' : '添加交易记录' }}</h2>
       <div class="account-info">
         邮箱: <strong>{{ authStore.currentAccount?.gameEmail }}</strong>
       </div>
@@ -46,7 +46,24 @@
           </div>
         </div>
 
-        <div class="form-row">
+        <div class="form-row two-col">
+          <div class="form-group">
+            <label>交易方向 *</label>
+            <select v-model="form.type">
+              <option value="buy">买入（支出）</option>
+              <option value="sell">卖出（收入）</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>交易类型 *</label>
+            <select v-model="form.tradeCurrency">
+              <option value="bean">豆子</option>
+              <option value="rmb">RMB</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row two-col">
           <div class="form-group">
             <label>交易日期 *</label>
             <input v-model="form.tradeDate" type="date" required />
@@ -93,9 +110,11 @@ const today = () => {
 
 const form = ref({
   itemName: '',
+  type: 'buy' as 'buy' | 'sell',
   price: 0,
   quantity: 1,
   tradeDate: today(),
+  tradeCurrency: 'bean' as 'bean' | 'rmb',
 })
 
 onMounted(async () => {
@@ -112,9 +131,11 @@ onMounted(async () => {
     if (trade) {
       form.value = {
         itemName: trade.itemName,
+        type: trade.type,
         price: trade.price,
         quantity: trade.quantity,
         tradeDate: trade.tradeDate,
+        tradeCurrency: trade.tradeCurrency || 'bean',
       }
     } else {
       error.value = '未找到要编辑的记录'
@@ -134,9 +155,11 @@ const handleSubmit = async () => {
   try {
     const tradeData = {
       itemName: form.value.itemName,
-      type: 'buy' as const,
+      type: form.value.type,
       price: form.value.price,
       quantity: form.value.quantity,
+      tradeCurrency: form.value.tradeCurrency,
+      showInRmbPanel: true,
       nature: '不考虑',
       level: -1,
       individual: -1,
@@ -150,7 +173,12 @@ const handleSubmit = async () => {
       : await ledgerStore.addTrade(tradeData)
 
     if (result.success) {
-      router.push('/')
+      const returnTo = String(route.query.returnTo || '')
+      if (returnTo === 'account' || route.path.startsWith('/account')) {
+        router.push({ path: '/account', query: { refreshTrades: '1' } })
+      } else {
+        router.push({ path: '/', query: { refreshTrades: '1' } })
+      }
     } else {
       error.value = '保存失败，请重试'
     }
@@ -224,7 +252,8 @@ const goBack = () => {
   color: var(--n-text-color-1);
 }
 
-.form-group input {
+.form-group input,
+.form-group select {
   padding: 8px 10px;
   border: 1px solid var(--n-border-color);
   border-radius: 4px;
@@ -233,7 +262,8 @@ const goBack = () => {
   color: var(--n-text-color-1);
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group select:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);

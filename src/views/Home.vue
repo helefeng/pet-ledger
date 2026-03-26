@@ -60,7 +60,7 @@
               <span>买: ¥{{ formatNumber(getAccountStats(account.id).buy) }}</span>
               <span>卖: ¥{{ formatNumber(getAccountStats(account.id).sell) }}</span>
               <span :class="getAccountStats(account.id).profit >= 0 ? 'profit' : 'loss'">
-                利: ¥{{ formatNumber(getAccountStats(account.id).profit) }}
+                利: {{ getAccountStats(account.id).profit >= 0 ? '+' : '' }}¥{{ formatNumber(getAccountStats(account.id).profit) }}
               </span>
             </div>
           </div>
@@ -72,12 +72,17 @@
     <div class="section-block">
       <div class="section-header" @click="showPending = !showPending" style="cursor:pointer">
         <h3>待确认卖出 <span class="collapse-arrow">{{ showPending ? '▾' : '▸' }}</span></h3>
-        <div class="section-header-right">
-          <span class="pending-count">共 {{ pendingTrades.length }} 条</span>
+        <div class="section-header-right" @click.stop>
+          <input v-model.trim="pendingKeyword" class="table-search-input" placeholder="搜索物品" />
+          <span class="pending-count">共 {{ formatSearchCount(filteredPendingTrades.length, pendingTrades.length, pendingKeyword) }} 条</span>
+          <div class="sort-btns">
+            <button :class="['sort-btn', { active: pendingSortBy === 'time' }]" @click.stop="pendingSortBy = 'time'">时间</button>
+            <button :class="['sort-btn', { active: pendingSortBy === 'amount' }]" @click.stop="pendingSortBy = 'amount'">金额</button>
+          </div>
         </div>
       </div>
       <div v-show="showPending">
-        <div v-if="pendingTrades.length === 0" class="empty-state">暂无待确认卖出</div>
+        <div v-if="filteredPendingTrades.length === 0" class="empty-state">暂无待确认卖出</div>
         <div v-else class="table-wrap">
           <el-table :data="pagedPendingTrades" stripe size="small" class="home-table" style="min-width: 760px">
             <el-table-column prop="itemName" label="物品" min-width="120" />
@@ -87,7 +92,7 @@
               </template>
             </el-table-column>
             <el-table-column label="金额" width="110" align="right">
-              <template #default="{ row }">¥{{ formatAmountRaw((row.price || 0) * (row.quantity || 0)) }}</template>
+              <template #default="{ row }">¥{{ formatTradeAmount(row) }}</template>
             </el-table-column>
             <el-table-column prop="tradeDate" label="交易日期" width="120" align="center" />
           </el-table>
@@ -96,7 +101,7 @@
               v-model:current-page="currentPendingPage"
               :page-size="pendingPageSize"
               layout="prev, pager, next"
-              :total="pendingTrades.length"
+              :total="filteredPendingTrades.length"
               size="small"
               background
             />
@@ -118,6 +123,8 @@
               买入 <span class="tab-count">{{ allBuyTrades.length }}</span>
             </button>
           </div>
+          <input v-model.trim="recentKeyword" class="table-search-input" placeholder="搜索物品" />
+          <span class="pending-count">共 {{ formatSearchCount(filteredRecentTrades.length, allRecentTrades.length, recentKeyword) }} 条</span>
           <div class="sort-btns">
             <button :class="['sort-btn', { active: tradeSortBy === 'time' }]" @click="tradeSortBy = 'time'">时间</button>
             <button :class="['sort-btn', { active: tradeSortBy === 'amount' }]" @click="tradeSortBy = 'amount'">金额</button>
@@ -125,26 +132,51 @@
         </div>
       </div>
       <div v-show="showRecentTrades">
-        <div v-if="allRecentTrades.length === 0" class="empty-state">暂无{{ tradeTab === 'buy' ? '买入' : '卖出' }}记录</div>
+        <div v-if="filteredRecentTrades.length === 0" class="empty-state">暂无{{ tradeTab === 'buy' ? '买入' : '卖出' }}记录</div>
         <div v-else class="table-wrap">
-          <el-table :data="pagedRecentTrades" stripe size="small" class="home-table" style="min-width: 860px">
-            <el-table-column prop="itemName" label="物品" min-width="120" />
-            <el-table-column label="账号邮箱" min-width="220" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="cell-nowrap">{{ getAccountEmailById(row.accountId) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="金额" width="110" align="right">
-              <template #default="{ row }">¥{{ formatAmountRaw((row.price || 0) * (row.quantity || 0)) }}</template>
-            </el-table-column>
-            <el-table-column prop="tradeDate" label="交易日期" width="120" align="center" />
-          </el-table>
+            <el-table :data="pagedRecentTrades" stripe size="small" class="home-table" style="min-width: 860px">
+              <el-table-column label="物品" min-width="120">
+                <template #default="{ row }">
+                  <span
+                    :class="['trade-item-name', { 'is-rmb': row.tradeCurrency === 'rmb' }]"
+                    @click="handleTradeItemClick(row)"
+                  >
+                    {{ row.itemName }}
+                    <el-tag v-if="row.tradeCurrency === 'rmb'" size="small" type="danger" effect="plain" style="margin-left:6px">RMB</el-tag>
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="账号邮箱" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="cell-nowrap">{{ getAccountEmailById(row.accountId) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="金额" width="110" align="right">
+                <template #default="{ row }">¥{{ formatTradeAmount(row) }}</template>
+              </el-table-column>
+              <el-table-column prop="tradeDate" label="交易日期" width="120" align="center" />
+              <el-table-column label="操作" width="130" align="center">
+                <template #default="{ row }">
+                  <div v-if="canOperateTrade(row)" class="table-actions">
+                    <button
+                      class="table-action-btn edit"
+                      @click="editTrade(row.id)"
+                    >编辑</button>
+                    <button
+                      class="table-action-btn delete"
+                      @click="deleteTrade(row.id)"
+                    >删除</button>
+                  </div>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+            </el-table>
           <div class="table-pagination">
             <el-pagination
               v-model:current-page="currentRecentTradePage"
               :page-size="recentTradePageSize"
               layout="prev, pager, next"
-              :total="allRecentTrades.length"
+              :total="filteredRecentTrades.length"
               size="small"
               background
             />
@@ -214,17 +246,38 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { db } from '@/services/db'
 import { formatNumber } from '@/constants/pet'
 import type { PetTrade, PlanetDiary } from '@/types'
 
-const formatAmountRaw = (num: number) =>
-  Number(num).toLocaleString('zh-CN', { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+const formatAmountRaw = (num: number) => formatNumber(Number(num))
+const formatBeanAmount = (num: number) => {
+  if (num === undefined || num === null) return '--'
+  const value = Number(num)
+  const abs = Math.abs(value)
+  const sign = value < 0 ? '-' : ''
+
+  if (abs >= 10000) {
+    const rounded = Math.round((abs / 10000) * 100) / 100
+    return sign + rounded.toFixed(2).replace(/\.?0+$/, '') + 'w'
+  }
+
+  return sign + Math.trunc(abs).toString()
+}
+const getTradeAmount = (trade: PetTrade) => Number(trade.sourceAmount ?? ((trade.price || 0) * (trade.quantity || 0)))
+const formatTradeAmount = (trade: PetTrade) => {
+  const amount = getTradeAmount(trade)
+  return trade.tradeCurrency === 'rmb' ? formatAmountRaw(amount) : formatBeanAmount(amount)
+}
+
+const formatSearchCount = (filtered: number, total: number, keyword: string) =>
+  keyword.trim() ? `${filtered}/${total}` : `${total}`
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const ledgerStore = useLedgerStore()
 
@@ -300,12 +353,14 @@ const scheduleMidnightRefresh = () => {
 // 用户总统计（所有账号合并，全量历史）
 const userTotalStats = computed(() => {
   const stats = allHistoryTrades.value.reduce((acc, t) => {
-    if (t.type === 'buy') {
-      acc.totalBuy += t.price * t.quantity
-    } else if (t.status === 'confirmed') {
-      acc.totalSell += t.price * t.quantity * 0.95
+    if (t.tradeCurrency !== 'rmb') {
+      if (t.type === 'buy') {
+        acc.totalBuy += t.price * t.quantity
+      } else if (t.status === 'confirmed') {
+        acc.totalSell += t.price * t.quantity * 0.95
+      }
+      acc.tradeCount++
     }
-    acc.tradeCount++
     return acc
   }, { totalBuy: 0, totalSell: 0, totalProfit: 0, tradeCount: 0 })
   
@@ -315,7 +370,7 @@ const userTotalStats = computed(() => {
 
 // 单个账号统计（全量历史）
 const getAccountStats = (accountId: string) => {
-  const trades = allHistoryTrades.value.filter(t => t.accountId === accountId)
+  const trades = allHistoryTrades.value.filter(t => t.accountId === accountId && t.tradeCurrency !== 'rmb')
   const buy = trades.filter(t => t.type === 'buy').reduce((s, t) => s + t.price * t.quantity, 0)
   const sell = trades.filter(t => t.type === 'sell' && t.status === 'confirmed').reduce((s, t) => s + t.price * t.quantity * 0.95, 0)
   return { buy, sell, profit: sell - buy }
@@ -337,15 +392,26 @@ const formatDateTime = (iso: string) => {
 }
 
 // 待确认卖出（全账号全量历史）
-const pendingTrades = computed(() =>
-  allHistoryTrades.value
+const pendingTrades = computed(() => {
+  const list = allHistoryTrades.value
     .filter(t => t.type === 'sell' && t.status === 'pending')
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-)
+
+  if (pendingSortBy.value === 'amount') {
+    return list.sort((a, b) => getTradeAmount(b) - getTradeAmount(a))
+  }
+
+  return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+})
+
+const filteredPendingTrades = computed(() => {
+  const keyword = pendingKeyword.value.trim().toLowerCase()
+  if (!keyword) return pendingTrades.value
+  return pendingTrades.value.filter(t => (t.itemName || '').toLowerCase().includes(keyword))
+})
 
 const pagedPendingTrades = computed(() => {
   const start = (currentPendingPage.value - 1) * pendingPageSize
-  return pendingTrades.value.slice(start, start + pendingPageSize)
+  return filteredPendingTrades.value.slice(start, start + pendingPageSize)
 })
 
 const goToDiary = (diary: PlanetDiary) => {
@@ -353,15 +419,40 @@ const goToDiary = (diary: PlanetDiary) => {
   router.push(`/account/diary?focus=${diary.id}`)
 }
 
+const handleTradeItemClick = (trade: PetTrade) => {
+  if (trade.tradeCurrency !== 'rmb') return
+  authStore.switchAccount(trade.accountId)
+  router.push('/account?focus=rmb')
+}
+
+const canOperateTrade = (trade: PetTrade) =>
+  !trade.id.startsWith('import_') && !trade.id.startsWith('listing_')
+
+const editTrade = (tradeId: string) => {
+  router.push(`/edit/${tradeId}?returnTo=home`)
+}
+
+const deleteTrade = async (tradeId: string) => {
+  const trade = allHistoryTrades.value.find(t => t.id === tradeId)
+  if (!trade || !canOperateTrade(trade)) return
+  if (!confirm('确定删除这条手动记录吗？')) return
+  await db.petTrades.delete(tradeId)
+  await loadAllData()
+  await ledgerStore.loadTrades()
+}
+
 // 所有账号最近交易 - 分买入/卖出，支持排序
 const tradeTab = ref<'buy' | 'sell'>('sell')
+const pendingSortBy = ref<'time' | 'amount'>('time')
+const pendingKeyword = ref('')
 const tradeSortBy = ref<'time' | 'amount'>('time')
+const recentKeyword = ref('')
 
 const allBuyTrades = computed(() =>
-  allHistoryTrades.value.filter(t => t.type === 'buy')
+  allHistoryTrades.value.filter(t => t.type === 'buy' && t.tradeCurrency !== 'rmb')
 )
 const allSellTrades = computed(() =>
-  allHistoryTrades.value.filter(t => t.type === 'sell' && t.status === 'confirmed')
+  allHistoryTrades.value.filter(t => t.type === 'sell' && t.status === 'confirmed' && t.tradeCurrency !== 'rmb')
 )
 
 const sortedTrades = computed(() => {
@@ -374,9 +465,15 @@ const sortedTrades = computed(() => {
 
 const allRecentTrades = computed(() => sortedTrades.value)
 
+const filteredRecentTrades = computed(() => {
+  const keyword = recentKeyword.value.trim().toLowerCase()
+  if (!keyword) return allRecentTrades.value
+  return allRecentTrades.value.filter(t => (t.itemName || '').toLowerCase().includes(keyword))
+})
+
 const pagedRecentTrades = computed(() => {
   const start = (currentRecentTradePage.value - 1) * recentTradePageSize
-  return allRecentTrades.value.slice(start, start + recentTradePageSize)
+  return filteredRecentTrades.value.slice(start, start + recentTradePageSize)
 })
 
 // 最近日记
@@ -409,6 +506,12 @@ onMounted(async () => {
 
   await loadAllData()
   scheduleMidnightRefresh()
+
+  if (route.query.refreshTrades === '1') {
+    const cleanQuery = { ...route.query }
+    delete cleanQuery.refreshTrades
+    router.replace({ path: route.path, query: cleanQuery })
+  }
 })
 
 onUnmounted(() => {
@@ -562,6 +665,19 @@ onUnmounted(() => {
   color: #667eea;
   background: rgba(102,126,234,0.08);
 }
+.table-search-input {
+  width: 120px;
+  padding: 4px 8px;
+  border: 1px solid var(--n-border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--n-color);
+  color: var(--n-text-color-1);
+}
+.table-search-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
 
 .section-header-right {
   display: flex;
@@ -581,16 +697,55 @@ onUnmounted(() => {
 
 .btn-link:hover { color: #5568d3; }
 
-.section-count {
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 72px;
+}
+
+.table-action-btn {
+  background: none;
+  border: none;
+  padding: 0;
   font-size: 12px;
-  color: var(--n-text-color-2);
-  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.table-action-btn.edit {
+  color: #1677ff;
+}
+
+.table-action-btn.delete {
+  color: #ff4d4f;
+}
+
+.table-action-btn:hover {
+  opacity: 0.85;
+  text-decoration: underline;
 }
 
 .pending-count {
   font-size: 12px;
   color: #fa8c16;
   font-weight: 600;
+}
+
+.trade-item-name {
+  display: inline-flex;
+  align-items: center;
+}
+
+.trade-item-name.is-rmb {
+  color: #cf1322;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.trade-item-name.is-rmb:hover {
+  text-decoration: underline;
 }
 
 .table-wrap {

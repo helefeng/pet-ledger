@@ -99,6 +99,8 @@ export const useLedgerStore = defineStore('ledger', () => {
       id: `trade_${Date.now()}_${Math.random()}`,
       userId: authStore.currentUser.id,
       accountId: authStore.currentAccount.id,
+      tradeCurrency: trade.tradeCurrency || 'bean',
+      showInRmbPanel: trade.showInRmbPanel ?? true,
       commission,
       actualProfit,
       createdAt: now,
@@ -170,11 +172,13 @@ export const useLedgerStore = defineStore('ledger', () => {
   const statistics = computed<Statistics>(() => {
     const stats = trades.value.reduce(
       (acc, t) => {
-        const totalPrice = t.price * t.quantity
-        if (t.type === 'buy') {
-          acc.totalBuy += totalPrice
-        } else if (t.status === 'confirmed') {
-          acc.totalSell += totalPrice * 0.95
+        if (t.tradeCurrency !== 'rmb') {
+          const totalPrice = t.price * t.quantity
+          if (t.type === 'buy') {
+            acc.totalBuy += totalPrice
+          } else if (t.status === 'confirmed') {
+            acc.totalSell += totalPrice * 0.95
+          }
         }
         acc.tradeCount += 1
         return acc

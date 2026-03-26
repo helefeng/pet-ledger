@@ -22,17 +22,20 @@ export const ABILITIES = [
 // 异色选项
 export const SHINY_OPTIONS = ['是', '否']
 
-// 格式化数字显示（精确无四舍五入，>=10000 用 w 显示保留四位小数）
+// 格式化数字显示（>=10000 使用 w，最多保留 4 位小数，不四舍五入）
 export const formatNumber = (num: number): string => {
   if (num === 0) return '0'
   const abs = Math.abs(num)
   const sign = num < 0 ? '-' : ''
+
   if (abs >= 10000) {
-    // 截断到小数点后4位（不四舍五入）
-    const truncated = Math.trunc(abs / 10000 * 10000) / 10000
+    // 转 w 后截断到 4 位小数（不四舍五入）
+    const truncated = Math.trunc((abs / 10000) * 10000) / 10000
     const str = truncated.toFixed(4).replace(/\.?0+$/, '')
     return sign + str + 'w'
   }
-  // 小于 10000 直接显示整数（截断，不四舍五入）
-  return sign + Math.trunc(abs).toString()
+
+  // 小于 10000 保留最多 4 位小数（截断，不四舍五入）
+  const truncated = Math.trunc(abs * 10000) / 10000
+  return sign + truncated.toFixed(4).replace(/\.?0+$/, '')
 }

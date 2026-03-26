@@ -99,6 +99,9 @@ export class SyncService {
         itemName: r.itemName || '未知',
         price: total,
         quantity: 1,
+        sourceAmount: total,
+        tradeCurrency: 'bean',
+        showInRmbPanel: true,
         type,
         status: 'confirmed',
         tradeDate,
@@ -130,7 +133,9 @@ export class SyncService {
     await db.petTrades.bulkDelete(oldListings.map(t => t.id))
 
     for (const r of myTradeList) {
-      const total = Number(r.unitPrice || 0)
+      const quantity = Number(r.quantity || 1)
+      const amount = Number(r.amount || r.totalAmount || 0)
+      const total = amount > 0 ? amount : Number(r.unitPrice || 0) * quantity
       const tradeDate = r.listTime?.split('T')[0] || today
       let desc = ''
       try {
@@ -148,8 +153,11 @@ export class SyncService {
         userId,
         accountId: account.id,
         itemName: r.itemName || '未知',
-        price: total,
-        quantity: r.quantity || 1,
+        price: Number(r.unitPrice || 0),
+        quantity,
+        sourceAmount: total,
+        tradeCurrency: 'bean',
+        showInRmbPanel: true,
         type: 'sell',
         status: 'pending',
         tradeDate,
